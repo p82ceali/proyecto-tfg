@@ -1,0 +1,33 @@
+The dataset contains 13 features, comprising both numerical and categorical data. Specifically, there are 6 numerical features and 7 categorical features.
+
+**Data Quality Assessment:**
+
+*   **Missing Values:** The dataset is clean, with no missing values identified in any of the features. This indicates a high level of data completeness.
+
+**Data Types:**
+
+The dataset encompasses the following data types for each feature:
+
+*   **Numerical:**
+    *   price: int64
+    *   area: int64
+    *   bedrooms: int64
+    *   bathrooms: int64
+    *   stories: int64
+    *   parking: int64
+*   **Categorical:**
+    *   mainroad: object
+    *   guestroom: object
+    *   basement: object
+    *   hotwaterheating: object
+    *   airconditioning: object
+    *   prefarea: object
+    *   furnishingstatus: object
+
+**Feature Variability:**
+
+The features exhibiting the highest variability, as measured by their standard deviations, are:
+
+*   price: 1870439.62
+*   area: 2170.14
+*   stories: 0.87

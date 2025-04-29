@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.env
+*.csv
+processed_data/
+reduced_data/
+selected_features/
+trained_models/
+venv/
