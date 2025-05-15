@@ -68,6 +68,7 @@ python -m panel serve main.py --autoreload --show
 ##### Esto abrirá una interfaz web donde podrás:
 
 -Subir un dataset .csv
+
 -Escribir lo que quieres hacer (EDA, limpieza, etc.)
 
 
