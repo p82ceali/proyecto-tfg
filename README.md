@@ -35,17 +35,17 @@ cd proyecto-tfg
 
 python -m venv venv
 
-## Activar el entorno:
+#### Activar el entorno:
 
-# En Windows (cmd):
+##### En Windows (cmd):
 
 venv\Scripts\activate
 
-# En PowerShell:
+##### En PowerShell:
 
 .\venv\Scripts\Activate.ps1
 
-# En macOS-/Linux:
+##### En macOS-/Linux:
 
 source venv/bin/activate
 
@@ -55,17 +55,17 @@ pip install -r requirements.txt
 
 ### 4. Configurar las variables de entorno
 
-## Crea un archivo .env en la raíz con este contenido:
+#### Crea un archivo .env en la raíz con este contenido:
 
 GOOGLE_API_KEY=tu_api_key
 
 ### 5. Ejecutar la aplicacion
 
-## Desde el entorno virtual activo, lanza el sistema con:
+#### Desde el entorno virtual activo, lanza el sistema con:
 
 python -m panel serve main.py --autoreload --show
 
-# Esto abrirá una interfaz web donde podrás:
+##### Esto abrirá una interfaz web donde podrás:
 
 -Subir un dataset .csv
 -Escribir lo que quieres hacer (EDA, limpieza, etc.)
