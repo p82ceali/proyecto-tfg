@@ -1,14 +1,31 @@
+# 📁 feature_selection_agent.py
+
 from crewai import Agent, LLM
 from tools.feature_selection_tool import FeatureSelector
 from crewai_tools import DirectoryReadTool
+from shared_context import SharedContext
 import os
 
-docs_tool_a = DirectoryReadTool(directory='processed_data')
-
+shared_context = SharedContext()
+def post_feature_selection_step(step_details):
+    """
+    Callback para actualizar el contexto tras seleccionar características.
+    Actualiza columnas en el contexto si el archivo resultante existe.
+    """
+    try:
+        file_path = "pipeline_data/dataset.csv"
+        if os.path.exists(file_path):
+            import pandas as pd
+            df = pd.read_csv(file_path)
+            shared_context.set_columns(df.columns.tolist())
+            shared_context.set_current_file(file_path)
+            shared_context.update_history("feature_selection", notes="Updated dataset after feature selection")
+    except Exception as e:
+        print(f"[Feature Selection step_callback error] {e}")
 class FeatureSelectionAgent:
     def create_agent(self):
         feature_tool = FeatureSelector()
-        data_read = DirectoryReadTool(directory='processed_data')
+        data_read = DirectoryReadTool(directory='pipeline_data')
 
         return Agent(
             role="lead feature engineer",
@@ -22,10 +39,14 @@ class FeatureSelectionAgent:
                          relevant features to maximize model accuracy, reduce overfitting, and improve computational efficiency.""",
             tools=[feature_tool, data_read],
             llm=LLM(
-                model="gemini/gemini-2.0-flash-exp",
+                model="gemini/gemini-2.0-flash-lite",
                 api_key=os.getenv("GOOGLE_API_KEY"),
                 custom_llm_provider="gemini"
             ),
-            allow_delegation=False,
+            step_callback=post_feature_selection_step,  # Callback para actualizar contexto tras selección de características
+            reasoning=True,
+            max_reasoning_attempts=3,
+            respect_context_window=True,
+            max_iter=15,
             verbose=True
         )

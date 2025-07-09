@@ -10,11 +10,11 @@ class RoutingTool(BaseTool):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def _run(self, user_query: str):
-        llm = LLM(
-            model="gemini/gemini-2.0-flash-exp",
-            api_key=os.getenv("GOOGLE_API_KEY"),
-            custom_llm_provider="gemini"
-        )
+        llm=LLM(
+                model="gemini/gemini-2.0-flash-lite",
+                api_key=os.getenv("GOOGLE_API_KEY"),
+                custom_llm_provider="gemini"
+            ),
 
         prompt = f"""
         A user said:

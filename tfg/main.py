@@ -1,14 +1,17 @@
-# ==========================
-# 📁 main.py
-# ==========================
 import os
 import panel as pn
 import threading
 import time
+import pandas as pd
+import csv
 from dotenv import load_dotenv
 from data_crew import MLDataCrew
 from crewai.agents.agent_builder.base_agent_executor_mixin import CrewAgentExecutorMixin
+from shared_context import SharedContext
 
+# ───────────────────────────────────
+# Configuración inicial
+# ───────────────────────────────────
 pn.extension(design="material")
 load_dotenv()
 
@@ -17,9 +20,12 @@ file_input = pn.widgets.FileInput(accept=".csv")
 
 user_input = None
 crew_started = False
+awaiting_target_variable = False
 uploaded_file_path = None
-active_file_path = None  # Ruta actual usada por cada tarea
+FINAL_DATA_PATH = "pipeline_data/dataset.csv"
 MAX_EXECUTION_TIME = 90
+
+shared_context = SharedContext()
 
 def safe_send_to_chat(message, user="Assistant", respond=False):
     if pn.state.curdoc:
@@ -39,15 +45,32 @@ def custom_ask_human_input(self, final_answer: dict) -> str:
 
 CrewAgentExecutorMixin._ask_human_input = custom_ask_human_input
 
+def detect_delimiter(file_path):
+    with open(file_path, newline='') as f:
+        sample = f.read(2048)
+        f.seek(0)
+        dialect = csv.Sniffer().sniff(sample)
+    return dialect.delimiter
+
 def handle_file_upload(event):
-    global uploaded_file_path, active_file_path
+    global uploaded_file_path, awaiting_target_variable
     if file_input.filename:
-        uploaded_file_path = f"raw_data/{file_input.filename}"
-        active_file_path = None  # Se reinicia al subir un nuevo archivo
+        os.makedirs("pipeline_data", exist_ok=True)
+        uploaded_file_path = f"pipeline_data/dataset.csv"
         with open(uploaded_file_path, "wb") as f:
             f.write(file_input.value)
         safe_send_to_chat(f"✅ Archivo {file_input.filename} subido correctamente.", user="Assistant", respond=False)
-        safe_send_to_chat("Ahora, ¿qué tarea deseas realizar? Describe en lenguaje natural:", user="Assistant", respond=False)
+
+        try:
+            delimiter = detect_delimiter(uploaded_file_path)
+            df = pd.read_csv(uploaded_file_path, sep=delimiter)
+            shared_context.set_columns(df.columns.tolist())
+            columnas = ', '.join(df.columns)
+            safe_send_to_chat(f"🔍 Estas son las columnas del dataset: {columnas}", user="Assistant", respond=False)
+            safe_send_to_chat("¿Cuál de ellas deseas usar como variable objetivo (target)?", user="Assistant", respond=False)
+            awaiting_target_variable = True
+        except Exception as e:
+            safe_send_to_chat(f"❌ No se pudo leer el archivo: {e}", user="Assistant", respond=False)
 
 file_input.param.watch(handle_file_upload, "value")
 
@@ -58,7 +81,7 @@ def timeout_handler():
         crew_started = False
 
 def initiate_chat(message):
-    global crew_started, active_file_path
+    global crew_started
     crew_started = True
     try:
         if not uploaded_file_path:
@@ -66,12 +89,22 @@ def initiate_chat(message):
             crew_started = False
             return
 
+        if not shared_context.get_target_variable():
+            safe_send_to_chat("❌ Primero debes indicar una variable objetivo antes de iniciar tareas.", user="Assistant", respond=False)
+            crew_started = False
+            return
+
         timer = threading.Timer(MAX_EXECUTION_TIME, timeout_handler)
         timer.start()
 
-        file_to_use = active_file_path or uploaded_file_path
+        file_to_use = FINAL_DATA_PATH if os.path.exists(FINAL_DATA_PATH) else uploaded_file_path
 
-        crew = MLDataCrew(target_variable="price", n_estimators=100, max_depth=10, chat_interface=chat_interface)
+        crew = MLDataCrew(
+            target_variable=shared_context.get_target_variable(),
+            n_estimators=100,
+            max_depth=10,
+            chat_interface=chat_interface
+        )
 
         task_decision = crew.decide_task_from_message(message)
         friendly_explanation = crew.explain_decision(task_decision)
@@ -79,28 +112,37 @@ def initiate_chat(message):
 
         crew.run_task(task_decision, inputs={"file_path": file_to_use})
 
-        # Actualizar la ruta del archivo activo si se genera uno nuevo
-        if task_decision == "data_cleaning":
-            active_file_path = f"processed_data/cleaned_{os.path.basename(file_to_use)}"
-        elif task_decision == "feature_selection":
-            active_file_path = f"selected_features/selected_features_{os.path.basename(file_to_use)}"
-        elif task_decision == "instance_selection":
-            active_file_path = "sampled_data/reduced_dataset.csv"
-
-        # Sugerencia del coordinador
         suggestion = crew.suggest_next_task_based_on_result(task_decision)
         if suggestion:
             safe_send_to_chat(f"💡 {suggestion}", user="System", respond=False)
 
         timer.cancel()
-
     except Exception as e:
         safe_send_to_chat(f"❌ Error general: {e}", user="Assistant", respond=False)
     finally:
         crew_started = False
 
 def callback(contents: str, user: str, instance: pn.chat.ChatInterface):
-    global crew_started, user_input
+    global crew_started, user_input, awaiting_target_variable, uploaded_file_path
+
+    if awaiting_target_variable:
+        columna = contents.strip()
+        try:
+            delimiter = detect_delimiter(uploaded_file_path)
+            df = pd.read_csv(uploaded_file_path, sep=delimiter)
+            if columna not in df.columns:
+                safe_send_to_chat(f"❌ La columna `{columna}` no se encuentra en el dataset. Prueba con una de estas:\n\n📊 {', '.join(df.columns)}", user="Assistant", respond=False)
+                return
+        except Exception as e:
+            safe_send_to_chat(f"❌ No se pudo leer el dataset: {e}", user="Assistant", respond=False)
+            return
+
+        shared_context.set_target_variable(columna)
+        awaiting_target_variable = False
+        safe_send_to_chat(f"🌟 Perfecto, usaremos `{columna}` como variable objetivo.", user="Assistant", respond=False)
+        safe_send_to_chat("📩 Ahora sí, dime qué tarea deseas realizar (por ejemplo: 'haz un análisis', 'limpia los datos', etc).", user="Assistant", respond=False)
+        return
+
     if not crew_started:
         thread = threading.Thread(target=initiate_chat, args=(contents,))
         thread.start()

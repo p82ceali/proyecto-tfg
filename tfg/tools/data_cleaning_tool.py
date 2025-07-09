@@ -1,28 +1,32 @@
-import os
+import csv
 from crewai.tools import BaseTool
 import pandas as pd
-
+import os
 
 class DataCleaningTool(BaseTool):
     name: str = "Data Cleaning Tool"
     description: str = (
         "Cleans datasets by removing duplicates, handling missing values, "
-        "and converting categorical variables into dummy variables. Returns a cleaned dataset."
+        "and converting categorical variables into dummy variables. Saves cleaned data to 'pipeline_data/dataset.csv'."
     )
+
+    def _detect_delimiter(self, file_path):
+        with open(file_path, newline='', encoding='utf-8') as f:
+            sample = f.read(2048)
+            f.seek(0)
+            return csv.Sniffer().sniff(sample).delimiter
 
     def _run(self, file_path: str, imputation_strategy: str = "ffill") -> str:
         try:
-            # Leer el archivo
             if not os.path.exists(file_path):
                 raise FileNotFoundError(f"File not found: {file_path}")
-            df = pd.read_csv(file_path)
 
-            # Limpieza: eliminar duplicados
+            delimiter = self._detect_delimiter(file_path)
+            df = pd.read_csv(file_path, sep=delimiter)
+
             df.drop_duplicates(inplace=True)
-            
-            numeric_cols = df.select_dtypes(include=["number"]).columns
 
-            # Solo imputar en columnas numéricas
+            numeric_cols = df.select_dtypes(include=["number"]).columns
             if imputation_strategy == "mean":
                 df[numeric_cols] = df[numeric_cols].fillna(df[numeric_cols].mean())
             elif imputation_strategy == "median":
@@ -36,31 +40,18 @@ class DataCleaningTool(BaseTool):
             else:
                 raise ValueError(f"Invalid imputation strategy: {imputation_strategy}")
 
-
-            # Identificar columnas categóricas
             categorical_columns = df.select_dtypes(include=["object"]).columns
-
-            # Validar y limpiar valores categóricos
             for col in categorical_columns:
                 unique_values = df[col].dropna().unique()
                 if set(unique_values).issubset({"yes", "no"}):
-                    # Codificación binaria para columnas con valores 'yes' y 'no'
                     df[col] = df[col].map({"yes": 1, "no": 0})
                 else:
-                    # Aplicar one-hot encoding para otras columnas categóricas
                     df = pd.get_dummies(df, columns=[col], drop_first=True)
 
-            # Crear directorio si no existe
-            os.makedirs("processed_data", exist_ok=True)
+            os.makedirs("pipeline_data", exist_ok=True)
+            final_path = "pipeline_data/dataset.csv"
+            df.to_csv(final_path, index=False, sep=delimiter)  # <-- fijar el mismo separador
 
-            # Crear nombre del archivo limpio
-            filename = os.path.basename(file_path)
-            clean_filename = f"cleaned_{filename}"
-            clean_path = os.path.join("processed_data", clean_filename)
-
-            # Guardar dataset limpio
-            df.to_csv(clean_path, index=False)
-
-            return f"✅ Cleaned dataset saved successfully at '{clean_path}'"
+            return f"✅ Cleaned dataset saved successfully at '{final_path}'"
         except Exception as e:
             return f"❌ Error during data cleaning: {e}"

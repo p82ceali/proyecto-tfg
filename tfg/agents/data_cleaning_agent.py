@@ -1,14 +1,29 @@
 from crewai import Agent, LLM
 from tools.data_cleaning_tool import DataCleaningTool
+import pandas as pd
 from crewai_tools import DirectoryReadTool
 import os
+from shared_context import SharedContext
 
-docs_tool_a = DirectoryReadTool(directory='raw_data')
+shared_context = SharedContext()
 
+def on_step(step_details):
+    # step_output puede ser AgentAction o ToolResult
+    # Si ha ejecutado la herramienta de limpieza, podemos actualizar context
+    try:
+        cleaned = "pipeline_data/dataset.csv"
+        if os.path.exists(cleaned):
+            df = pd.read_csv(cleaned)
+            shared_context.set_columns(df.columns.tolist())
+            shared_context.set_current_file(cleaned)
+            shared_context.update_history("data_cleaning", notes="Columns updated after cleaning")
+    except Exception as e:
+        print(f"[step_callback error] {e}")
 class DataCleaningAgent:
     def create_agent(self):
         data_cleaning_tool = DataCleaningTool()
-        data_read = DirectoryReadTool(directory='raw_data')
+        data_read = DirectoryReadTool(directory='pipeline_data')
+
         return Agent(
             role="ml data quality engineer",
             goal=""" [For ML Engineers] Ensure high-quality datasets for production ML pipelines by performing advanced data cleaning tasks, 
@@ -21,10 +36,15 @@ class DataCleaningAgent:
                          production-ready datasets optimized for training and deployment.""",
             tools=[data_cleaning_tool, data_read],
             llm=LLM(
-                model="gemini/gemini-2.0-flash-exp",
+                model="gemini/gemini-2.0-flash-lite",
                 api_key=os.getenv("GOOGLE_API_KEY"),
                 custom_llm_provider="gemini"
             ),
-            allow_delegation=False,
+            step_callback=on_step, 
+            reasoning=True,
+            max_reasoning_attempts=3,
+            respect_context_window=True,
+            max_iter=15,
             verbose=True
+
         )

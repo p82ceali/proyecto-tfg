@@ -1,14 +1,29 @@
 from crewai import Agent, LLM
 from tools.instance_selection_tool import InstanceSelectionTool
 from crewai_tools import DirectoryReadTool
+from shared_context import SharedContext  # 👈 Añadido
 import os
 
-docs_tool_a = DirectoryReadTool(directory='features_data')
-
+shared_context = SharedContext()  # 👈 Instancia compartida
+def post_instance_selection_step(step_details):
+    """
+    Callback que actualiza el contexto después de reducir el dataset.
+    Cambia el archivo actual a la nueva ruta y actualiza las columnas.
+    """
+    try:
+        reduced_path = "pipeline_data/dataset.csv"
+        if os.path.exists(reduced_path):
+            import pandas as pd
+            df = pd.read_csv(reduced_path)
+            shared_context.set_current_file(reduced_path)
+            shared_context.set_columns(df.columns.tolist())
+            shared_context.update_history("instance_selection", notes="Reduced dataset to subset")
+    except Exception as e:
+        print(f"[Instance Selection step_callback error] {e}")
 class InstanceSelectionAgent:
     def create_agent(self):
         instance_tool = InstanceSelectionTool()
-        data_read = DirectoryReadTool(directory='raw_data')
+        data_read = DirectoryReadTool(directory='pipeline_data')
 
         return Agent(
             role="data sampling architect",
@@ -26,6 +41,10 @@ class InstanceSelectionAgent:
                 api_key=os.getenv("GOOGLE_API_KEY"),
                 custom_llm_provider="gemini"
             ),
-            allow_delegation=False,
+            step_callback=post_instance_selection_step,  # Callback para actualizar contexto tras selección de instancias
+            reasoning=True,
+            max_reasoning_attempts=3,
+            respect_context_window=True,
+            max_iter=15,
             verbose=True
         )

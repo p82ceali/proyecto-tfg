@@ -32,7 +32,7 @@ class MLDataCrew:
 
     def data_cleaning_task(self):
         return Task(
-            description="Clean the raw dataset by handling missing values, removing duplicates, and converting categorical variables into dummy variables.",
+            description="Clean the dataset by handling missing values, removing duplicates, and converting categorical variables into dummy variables.",
             agent=self.agents.data_cleaning_agent(),
             expected_output="A cleaned dataset ready for feature selection and modeling.",
             callback=self.print_output,

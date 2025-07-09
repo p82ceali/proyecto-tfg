@@ -11,7 +11,7 @@ class InstanceSelectionTool(BaseTool):
         "while maintaining data representativeness. Saves the reduced dataset to a specified directory."
     )
 
-    def _run(self, file_path: str, target_variable: str, sample_size: float = 0.5, output_dir: str = "reduced_data") -> str:
+    def _run(self, file_path: str, target_variable: str, sample_size: float = 0.5, output_dir: str = "pipeline_data") -> str:
         try:
             # Verificar si el archivo existe
             if not os.path.exists(file_path):
@@ -41,13 +41,10 @@ class InstanceSelectionTool(BaseTool):
             # Crear el dataset reducido
             reduced_df = pd.concat([X_res, y_res], axis=1)
 
-            # Crear directorio de salida si no existe
-            os.makedirs(output_dir, exist_ok=True)
+            os.makedirs("pipeline_data", exist_ok=True)
+            final_path = "pipeline_data/dataset.csv"
+            reduced_df.to_csv(final_path, index=False)
 
-            # Guardar el dataset reducido
-            reduced_dataset_path = os.path.join(output_dir, "reduced_dataset.csv")
-            reduced_df.to_csv(reduced_dataset_path, index=False)
-
-            return f"✅ Reduced dataset saved successfully to: {reduced_dataset_path}"
+            return f"✅ Reduced dataset saved successfully to: {final_path}"
         except Exception as e:
             return f"❌ Error during instance selection: {str(e)}"
