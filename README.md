@@ -39,7 +39,7 @@ GOOGLE_API_KEY="tu_api_key"
 
 Lanzar el dashboard interactivo:
 ```bash
-panel serve main_panel.py --autoreload --show
+panel serve main.py --autoreload --show
 ```
 
 Esto abrirá una interfaz web donde podrás subir tu dataset `.csv` y comunicarte en lenguaje natural con los agentes inteligentes.
