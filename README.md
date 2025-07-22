@@ -30,7 +30,7 @@ pip install -r requirements.txt
 
 Crear un archivo `.env` con las siguientes variables:
 ```env
-GEMINI_API_KEY="tu_api_key"
+GOOGLE_API_KEY="tu_api_key"
 ```
 
 ## Uso del sistema
