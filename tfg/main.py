@@ -12,7 +12,7 @@ from shared_context import SharedContext
 # ───────────────────────────────────
 # Configuración inicial
 # ───────────────────────────────────
-pn.extension(design="material")
+pn.extension('tabulator', design="material")
 load_dotenv()
 
 chat_interface = pn.chat.ChatInterface()
@@ -20,7 +20,6 @@ file_input = pn.widgets.FileInput(accept=".csv")
 
 user_input = None
 crew_started = False
-awaiting_target_variable = False
 uploaded_file_path = None
 FINAL_DATA_PATH = "pipeline_data/dataset.csv"
 MAX_EXECUTION_TIME = 90
@@ -53,10 +52,10 @@ def detect_delimiter(file_path):
     return dialect.delimiter
 
 def handle_file_upload(event):
-    global uploaded_file_path, awaiting_target_variable
+    global uploaded_file_path
     if file_input.filename:
         os.makedirs("pipeline_data", exist_ok=True)
-        uploaded_file_path = f"pipeline_data/dataset.csv"
+        uploaded_file_path = "pipeline_data/dataset.csv"
         with open(uploaded_file_path, "wb") as f:
             f.write(file_input.value)
         safe_send_to_chat(f"✅ Archivo {file_input.filename} subido correctamente.", user="Assistant", respond=False)
@@ -65,10 +64,11 @@ def handle_file_upload(event):
             delimiter = detect_delimiter(uploaded_file_path)
             df = pd.read_csv(uploaded_file_path, sep=delimiter)
             shared_context.set_columns(df.columns.tolist())
-            columnas = ', '.join(df.columns)
-            safe_send_to_chat(f"🔍 Estas son las columnas del dataset: {columnas}", user="Assistant", respond=False)
-            safe_send_to_chat("¿Cuál de ellas deseas usar como variable objetivo (target)?", user="Assistant", respond=False)
-            awaiting_target_variable = True
+
+            # 🔹 Crear un Tabulator dinámico y enviarlo al chat
+            table = pn.widgets.Tabulator(df, height=400, pagination='remote', page_size=20)
+            chat_interface.send(pn.Column("### Vista previa del dataset", table), user="Assistant", respond=False)
+
         except Exception as e:
             safe_send_to_chat(f"❌ No se pudo leer el archivo: {e}", user="Assistant", respond=False)
 
@@ -89,18 +89,13 @@ def initiate_chat(message):
             crew_started = False
             return
 
-        if not shared_context.get_target_variable():
-            safe_send_to_chat("❌ Primero debes indicar una variable objetivo antes de iniciar tareas.", user="Assistant", respond=False)
-            crew_started = False
-            return
-
         timer = threading.Timer(MAX_EXECUTION_TIME, timeout_handler)
         timer.start()
 
         file_to_use = FINAL_DATA_PATH if os.path.exists(FINAL_DATA_PATH) else uploaded_file_path
 
         crew = MLDataCrew(
-            target_variable=shared_context.get_target_variable(),
+            target_variable=shared_context.get_target_variable() or "",
             n_estimators=100,
             max_depth=10,
             chat_interface=chat_interface
@@ -123,25 +118,7 @@ def initiate_chat(message):
         crew_started = False
 
 def callback(contents: str, user: str, instance: pn.chat.ChatInterface):
-    global crew_started, user_input, awaiting_target_variable, uploaded_file_path
-
-    if awaiting_target_variable:
-        columna = contents.strip()
-        try:
-            delimiter = detect_delimiter(uploaded_file_path)
-            df = pd.read_csv(uploaded_file_path, sep=delimiter)
-            if columna not in df.columns:
-                safe_send_to_chat(f"❌ La columna `{columna}` no se encuentra en el dataset. Prueba con una de estas:\n\n📊 {', '.join(df.columns)}", user="Assistant", respond=False)
-                return
-        except Exception as e:
-            safe_send_to_chat(f"❌ No se pudo leer el dataset: {e}", user="Assistant", respond=False)
-            return
-
-        shared_context.set_target_variable(columna)
-        awaiting_target_variable = False
-        safe_send_to_chat(f"🌟 Perfecto, usaremos `{columna}` como variable objetivo.", user="Assistant", respond=False)
-        safe_send_to_chat("📩 Ahora sí, dime qué tarea deseas realizar (por ejemplo: 'haz un análisis', 'limpia los datos', etc).", user="Assistant", respond=False)
-        return
+    global crew_started, user_input
 
     if not crew_started:
         thread = threading.Thread(target=initiate_chat, args=(contents,))
@@ -150,5 +127,11 @@ def callback(contents: str, user: str, instance: pn.chat.ChatInterface):
         user_input = contents
 
 chat_interface.callback = callback
-safe_send_to_chat("👋 ¡Bienvenido! Sube tu archivo CSV y dime qué deseas hacer.", user="Assistant", respond=False)
-pn.Column(file_input, chat_interface).servable()
+
+# Layout principal
+layout = pn.Column(
+    chat_interface,
+    file_input
+)
+
+layout.servable()
