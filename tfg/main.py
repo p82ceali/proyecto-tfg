@@ -10,7 +10,7 @@ from crewai.agents.agent_builder.base_agent_executor_mixin import CrewAgentExecu
 from shared_context import SharedContext
 
 # ───────────────────────────────────
-# Configuración inicial
+# Initial Setup
 # ───────────────────────────────────
 pn.extension('tabulator', design="material")
 load_dotenv()
@@ -35,7 +35,7 @@ def safe_send_to_chat(message, user="Assistant", respond=False):
 def custom_ask_human_input(self, final_answer: dict) -> str:
     global user_input
     safe_send_to_chat(final_answer, user="Assistant", respond=False)
-    safe_send_to_chat("✋ Por favor proporciona tu respuesta:", user="System", respond=False)
+    safe_send_to_chat("✋ Please provide your response:", user="System", respond=False)
     while user_input is None:
         time.sleep(0.5)
     respuesta = user_input
@@ -58,26 +58,26 @@ def handle_file_upload(event):
         uploaded_file_path = "pipeline_data/dataset.csv"
         with open(uploaded_file_path, "wb") as f:
             f.write(file_input.value)
-        safe_send_to_chat(f"✅ Archivo {file_input.filename} subido correctamente.", user="Assistant", respond=False)
+        safe_send_to_chat(f"✅ File {file_input.filename} uploaded successfully.", user="Assistant", respond=False)
 
         try:
             delimiter = detect_delimiter(uploaded_file_path)
             df = pd.read_csv(uploaded_file_path, sep=delimiter)
             shared_context.set_columns(df.columns.tolist())
 
-            # 🔹 Crear un Tabulator dinámico y enviarlo al chat
+            # Show a preview table in the chat
             table = pn.widgets.Tabulator(df, height=400, pagination='remote', page_size=20)
-            chat_interface.send(pn.Column("### Vista previa del dataset", table), user="Assistant", respond=False)
+            chat_interface.send(pn.Column("### Dataset Preview", table), user="Assistant", respond=False)
 
         except Exception as e:
-            safe_send_to_chat(f"❌ No se pudo leer el archivo: {e}", user="Assistant", respond=False)
+            safe_send_to_chat(f"❌ Failed to read file: {e}", user="Assistant", respond=False)
 
 file_input.param.watch(handle_file_upload, "value")
 
 def timeout_handler():
     global crew_started
     if crew_started:
-        safe_send_to_chat("⚠️ El proceso está tardando más de lo esperado. ¿Quieres intentar otra tarea?", user="Assistant", respond=False)
+        safe_send_to_chat("⚠️ The process is taking longer than expected. Do you want to try another task?", user="Assistant", respond=False)
         crew_started = False
 
 def initiate_chat(message):
@@ -85,7 +85,7 @@ def initiate_chat(message):
     crew_started = True
     try:
         if not uploaded_file_path:
-            safe_send_to_chat("❌ Primero debes subir un archivo CSV para comenzar.", user="Assistant", respond=False)
+            safe_send_to_chat("❌ Please upload a CSV file first.", user="Assistant", respond=False)
             crew_started = False
             return
 
@@ -101,25 +101,20 @@ def initiate_chat(message):
             chat_interface=chat_interface
         )
 
-        task_decision = crew.decide_task_from_message(message)
-        friendly_explanation = crew.explain_decision(task_decision)
-        safe_send_to_chat(f"🤖 {friendly_explanation}", user="System", respond=False)
-
-        crew.run_task(task_decision, inputs={"file_path": file_to_use})
-
-        suggestion = crew.suggest_next_task_based_on_result(task_decision)
-        if suggestion:
-            safe_send_to_chat(f"💡 {suggestion}", user="System", respond=False)
+        # Full hierarchical kickoff: conversation + planning + tasks
+        crew.kickoff(
+            user_message=message,
+            inputs={"file_path": file_to_use}
+        )
 
         timer.cancel()
     except Exception as e:
-        safe_send_to_chat(f"❌ Error general: {e}", user="Assistant", respond=False)
+        safe_send_to_chat(f"❌ General error: {e}", user="Assistant", respond=False)
     finally:
         crew_started = False
 
 def callback(contents: str, user: str, instance: pn.chat.ChatInterface):
     global crew_started, user_input
-
     if not crew_started:
         thread = threading.Thread(target=initiate_chat, args=(contents,))
         thread.start()
@@ -128,7 +123,7 @@ def callback(contents: str, user: str, instance: pn.chat.ChatInterface):
 
 chat_interface.callback = callback
 
-# Layout principal
+# Main Layout
 layout = pn.Column(
     chat_interface,
     file_input

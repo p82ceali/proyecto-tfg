@@ -39,7 +39,7 @@ class FeatureSelectionAgent:
                          relevant features to maximize model accuracy, reduce overfitting, and improve computational efficiency.""",
             tools=[feature_tool, data_read],
             llm=LLM(
-                model="gemini/gemini-2.0-flash-lite",
+                model="gemini/gemini-2.5-flash-lite",
                 api_key=os.getenv("GOOGLE_API_KEY"),
                 custom_llm_provider="gemini"
             ),

@@ -38,7 +38,7 @@ class ModelTrainingAgent:
                          fine-tuning, and deploying models for real-world applications with maximum efficiency and reliability.""",
             tools=[training_tool, data_read],
             llm=LLM(
-                model="gemini/gemini-2.0-flash-exp",
+                model="gemini/gemini-2.5-flash-lite",
                 api_key=os.getenv("GOOGLE_API_KEY"),
                 custom_llm_provider="gemini"
             ),

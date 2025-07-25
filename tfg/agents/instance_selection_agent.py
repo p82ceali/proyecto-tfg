@@ -37,7 +37,7 @@ class InstanceSelectionAgent:
                          preserve statistical integrity and maximize model performance while reducing computational overhead.""",
             tools=[instance_tool, data_read],
             llm=LLM(
-                model="gemini/gemini-2.0-flash-exp",
+                model="gemini/gemini-2.5-flash-lite",
                 api_key=os.getenv("GOOGLE_API_KEY"),
                 custom_llm_provider="gemini"
             ),

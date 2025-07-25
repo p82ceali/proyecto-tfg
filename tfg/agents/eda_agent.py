@@ -40,7 +40,7 @@ class EDAAgent:
             ),
             tools=[eda_tool, data_read],
             llm=LLM(
-                model="gemini/gemini-2.0-flash-lite",
+                model="gemini/gemini-2.5-flash-lite",
                 api_key=os.getenv("GOOGLE_API_KEY"),
                 custom_llm_provider="gemini"
             ),
