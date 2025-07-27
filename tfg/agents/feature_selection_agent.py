@@ -6,22 +6,7 @@ from crewai_tools import DirectoryReadTool
 from shared_context import SharedContext
 import os
 
-shared_context = SharedContext()
-def post_feature_selection_step(step_details):
-    """
-    Callback para actualizar el contexto tras seleccionar características.
-    Actualiza columnas en el contexto si el archivo resultante existe.
-    """
-    try:
-        file_path = "pipeline_data/dataset.csv"
-        if os.path.exists(file_path):
-            import pandas as pd
-            df = pd.read_csv(file_path)
-            shared_context.set_columns(df.columns.tolist())
-            shared_context.set_current_file(file_path)
-            shared_context.update_history("feature_selection", notes="Updated dataset after feature selection")
-    except Exception as e:
-        print(f"[Feature Selection step_callback error] {e}")
+
 class FeatureSelectionAgent:
     def create_agent(self):
         feature_tool = FeatureSelector()
@@ -43,7 +28,6 @@ class FeatureSelectionAgent:
                 api_key=os.getenv("GOOGLE_API_KEY"),
                 custom_llm_provider="gemini"
             ),
-            step_callback=post_feature_selection_step,  # Callback para actualizar contexto tras selección de características
             reasoning=True,
             max_reasoning_attempts=3,
             respect_context_window=True,
