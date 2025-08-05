@@ -1,25 +1,26 @@
 import os
 import panel as pn
 import threading
-import time
 import pandas as pd
 import csv
+import plotly.express as px
 from dotenv import load_dotenv
 from shared_context import SharedContext
-from data_crew import ejecutar_interaccion  # <-- IMPORTAMOS EL NUEVO GESTOR
+from data_crew import ejecutar_interaccion
 
 # ───────────────────────────────────
 # Initial Setup
 # ───────────────────────────────────
-pn.extension('tabulator', design="material")
+pn.extension('tabulator', 'plotly', design="material")
 load_dotenv()
 
 chat_interface = pn.chat.ChatInterface()
 file_input = pn.widgets.FileInput(accept=".csv")
 
-user_input = None
 uploaded_file_path = None
 FINAL_DATA_PATH = "pipeline_data/dataset.csv"
+MODEL_PATH = "pipeline_data/model.pkl"
+REPORT_PATH = "pipeline_data/training_report.pdf"
 MAX_EXECUTION_TIME = 90
 
 shared_context = SharedContext()
@@ -59,6 +60,27 @@ file_input.param.watch(handle_file_upload, "value")
 def timeout_handler():
     safe_send_to_chat("⚠️ The process is taking longer than expected. Do you want to try another task?", user="Assistant", respond=False)
 
+def generate_interactive_plot(df: pd.DataFrame, target: str = None):
+    try:
+        if target and target in df.columns:
+            fig = px.histogram(df, x=target, title=f"Distribution of {target}")
+        else:
+            fig = px.scatter_matrix(df.select_dtypes(include='number'), title="Scatter Matrix of Numeric Features")
+        return pn.pane.Plotly(fig, height=400)
+    except Exception:
+        return "Unable to generate plot."
+
+def offer_downloads():
+    downloads = []
+    if os.path.exists(MODEL_PATH):
+        downloads.append(pn.widgets.FileDownload(path=MODEL_PATH, filename="trained_model.pkl", label="Download Trained Model"))
+    if os.path.exists(FINAL_DATA_PATH):
+        downloads.append(pn.widgets.FileDownload(path=FINAL_DATA_PATH, filename="processed_dataset.csv", label="Download Processed Dataset"))
+    if os.path.exists(REPORT_PATH):
+        downloads.append(pn.widgets.FileDownload(path=REPORT_PATH, filename="training_report.pdf", label="Download Training Report"))
+    if downloads:
+        chat_interface.send(pn.Column("### Downloads", *downloads), user="Assistant", respond=False)
+
 def initiate_chat(message):
     try:
         if not uploaded_file_path:
@@ -68,10 +90,17 @@ def initiate_chat(message):
         timer = threading.Timer(MAX_EXECUTION_TIME, timeout_handler)
         timer.start()
 
-        # Aquí usamos el gestor de interacción del nuevo sistema
         resultado = ejecutar_interaccion(message)
 
         safe_send_to_chat(resultado, user="Assistant", respond=False)
+
+        if os.path.exists(FINAL_DATA_PATH):
+            df = pd.read_csv(FINAL_DATA_PATH)
+            plot = generate_interactive_plot(df)
+            chat_interface.send(pn.Column("### Data Insights", plot), user="Assistant", respond=False)
+
+        offer_downloads()
+
         timer.cancel()
     except Exception as e:
         safe_send_to_chat(f"❌ General error: {e}", user="Assistant", respond=False)

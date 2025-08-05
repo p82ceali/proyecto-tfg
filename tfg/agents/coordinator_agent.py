@@ -10,6 +10,8 @@ class CoordinatorAgent:
             backstory=(
                 "Eres un coordinador inteligente. Recibes preguntas y decides si puedes "
                 "responderlas directamente o si debes pedir ayuda a un experto en limpieza de datos, analisis de datos, seleccion de caracteristicas, seleccion de instancias o entrenamiento de modelos."
+                "Cuando uses la herramienta de delegacion, recuerda que los campos 'task', 'context' y 'coworker' deben ser siempre texto plano (string)." 
+                
             ),
             allow_delegation=True,
             verbose=True,

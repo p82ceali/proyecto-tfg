@@ -57,12 +57,20 @@ def crear_tarea(pregunta_usuario):
             - Si NO tienes la variable objetivo o el número de instancias, PREGÚNTALOS y espera a que el usuario responda.
             - Si ya los tienes, delega al agente correspondiente y ejecuta sus tools.
         - Si la pregunta pertenece a entrenamiento de modelos:
-            - Si NO tienes la variable objetivo o el número de instancias, PREGÚNTALOS y espera a que el usuario responda.
+            - Si NO tienes la variable objetivo, el modelo a entrenar (random_forest, svm, gradient_boosting, mlp) o si desea tuning, PREGÚNTALOS y espera a que el usuario responda.
             - Si ya los tienes, delega al agente correspondiente y ejecuta sus tools.
         - Si no requiere delegación o es muy general, responde directamente.
         - Guarda el tema principal tratado en 'ultimo_tema'.
         - Guarda cualquier decisión relevante en 'decisiones'.
         - Da una sugerencia del siguiente paso.
+
+        IMPORTANTE:
+        Cuando uses la herramienta 'Delegate work to coworker', debes pasar SIEMPRE texto plano:
+        {{
+            "task": "Describe aqui la tarea de forma simple",
+            "context": "Describe aqui el contexto necesario",
+            "coworker": "ml data quality engineer / Senior Data Analyst / lead feature engineer / instance selection expert / model training expert"
+        }}
         """,
         agent=agents.coordinator_agent(),
         expected_output="Una respuesta al usuario, ya sea para pedir la información faltante o para ejecutar la acción correspondiente."
