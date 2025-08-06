@@ -2,12 +2,13 @@ import csv
 from crewai.tools import BaseTool
 import pandas as pd
 import os
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 class DataCleaningTool(BaseTool):
     name: str = "Data Cleaning Tool"
     description: str = (
-        "Cleans datasets by removing duplicates, handling missing values, "
-        "and converting categorical variables into dummy variables. Saves cleaned data to 'pipeline_data/dataset.csv'."
+        "Cleans datasets by removing duplicates, handling missing values, converting categorical variables into dummy variables, "
+        "and optionally scaling numeric features. Saves cleaned data to 'pipeline_data/dataset.csv'."
     )
 
     def _detect_delimiter(self, file_path):
@@ -16,7 +17,7 @@ class DataCleaningTool(BaseTool):
             f.seek(0)
             return csv.Sniffer().sniff(sample).delimiter
 
-    def _run(self, file_path: str, imputation_strategy: str = "ffill") -> str:
+    def _run(self, file_path: str, imputation_strategy: str = "ffill", scaling_strategy: str = "none") -> str:
         try:
             if not os.path.exists(file_path):
                 raise FileNotFoundError(f"File not found: {file_path}")
@@ -39,6 +40,16 @@ class DataCleaningTool(BaseTool):
                 df.bfill(inplace=True)
             else:
                 raise ValueError(f"Invalid imputation strategy: {imputation_strategy}")
+
+            # Scaling numéricos si se solicita
+            if scaling_strategy == "normalization":
+                scaler = MinMaxScaler()
+                df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
+            elif scaling_strategy == "standardization":
+                scaler = StandardScaler()
+                df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
+            elif scaling_strategy != "none":
+                raise ValueError(f"Invalid scaling strategy: {scaling_strategy}")
 
             categorical_columns = df.select_dtypes(include=["object"]).columns
             for col in categorical_columns:

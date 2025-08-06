@@ -1,4 +1,5 @@
 import os
+import json
 import pandas as pd
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingClassifier, GradientBoostingRegressor
@@ -12,7 +13,7 @@ class ModelTrainingTool(BaseTool):
     description: str = (
         "Trains an ML model (RandomForest, SVM, GradientBoosting, MLP) with optional hyperparameter tuning. "
         "Automatically detects classification/regression tasks. Evaluates the model with appropriate metrics. "
-        "Saves the trained model to 'pipeline_data/model.pkl'."
+        "Saves the trained model and metrics to the 'pipeline_data/' folder."
     )
 
     def _detect_task_type(self, y):
@@ -65,7 +66,6 @@ class ModelTrainingTool(BaseTool):
                         model = ModelClass()
                         model.fit(X_train, y_train)
                 except Exception:
-                    # fallback if tuning fails
                     model = ModelClass()
                     model.fit(X_train, y_train)
             else:
@@ -75,7 +75,7 @@ class ModelTrainingTool(BaseTool):
             y_pred = model.predict(X_test)
 
             if task_type == 'regression':
-                rmse = mean_squared_error(y_test, y_pred) ** 0.5  
+                rmse = mean_squared_error(y_test, y_pred) ** 0.5
                 r2 = r2_score(y_test, y_pred)
                 metrics = {"RMSE": round(rmse, 3), "R2 Score": round(r2, 3)}
             else:
@@ -87,10 +87,20 @@ class ModelTrainingTool(BaseTool):
             model_path = "pipeline_data/model.pkl"
             pd.to_pickle(model, model_path)
 
+            metrics_path = "pipeline_data/metrics.json"
+            with open(metrics_path, "w") as f:
+                json.dump({
+                    "model": model_name,
+                    "task_type": task_type,
+                    "target": target_variable,
+                    "metrics": metrics
+                }, f, indent=4)
+
             return (
                 f"✅ Model ({model_name}) trained successfully!\n"
                 f"Metrics: {metrics}\n"
-                f"Model saved to {model_path}"
+                f"Model saved to {model_path}\n"
+                f"Evaluation metrics saved to {metrics_path}"
             )
 
         except Exception as e:

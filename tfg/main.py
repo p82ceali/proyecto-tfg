@@ -1,9 +1,9 @@
 import os
 import panel as pn
 import threading
+import time
 import pandas as pd
 import csv
-import plotly.express as px
 from dotenv import load_dotenv
 from shared_context import SharedContext
 from data_crew import ejecutar_interaccion
@@ -11,19 +11,20 @@ from data_crew import ejecutar_interaccion
 # ───────────────────────────────────
 # Initial Setup
 # ───────────────────────────────────
-pn.extension('tabulator', 'plotly', design="material")
+pn.extension('tabulator', design="material")
 load_dotenv()
 
 chat_interface = pn.chat.ChatInterface()
 file_input = pn.widgets.FileInput(accept=".csv")
 
+user_input = None
 uploaded_file_path = None
 FINAL_DATA_PATH = "pipeline_data/dataset.csv"
-MODEL_PATH = "pipeline_data/model.pkl"
-REPORT_PATH = "pipeline_data/training_report.pdf"
 MAX_EXECUTION_TIME = 90
 
 shared_context = SharedContext()
+
+status_pane = pn.pane.Markdown("⚠️ Aún no se ha iniciado el pipeline.")
 
 def safe_send_to_chat(message, user="Assistant", respond=False):
     if pn.state.curdoc:
@@ -60,49 +61,23 @@ file_input.param.watch(handle_file_upload, "value")
 def timeout_handler():
     safe_send_to_chat("⚠️ The process is taking longer than expected. Do you want to try another task?", user="Assistant", respond=False)
 
-def generate_interactive_plot(df: pd.DataFrame, target: str = None):
-    try:
-        if target and target in df.columns:
-            fig = px.histogram(df, x=target, title=f"Distribution of {target}")
-        else:
-            fig = px.scatter_matrix(df.select_dtypes(include='number'), title="Scatter Matrix of Numeric Features")
-        return pn.pane.Plotly(fig, height=400)
-    except Exception:
-        return "Unable to generate plot."
-
-def offer_downloads():
-    downloads = []
-    if os.path.exists(MODEL_PATH):
-        downloads.append(pn.widgets.FileDownload(path=MODEL_PATH, filename="trained_model.pkl", label="Download Trained Model"))
-    if os.path.exists(FINAL_DATA_PATH):
-        downloads.append(pn.widgets.FileDownload(path=FINAL_DATA_PATH, filename="processed_dataset.csv", label="Download Processed Dataset"))
-    if os.path.exists(REPORT_PATH):
-        downloads.append(pn.widgets.FileDownload(path=REPORT_PATH, filename="training_report.pdf", label="Download Training Report"))
-    if downloads:
-        chat_interface.send(pn.Column("### Downloads", *downloads), user="Assistant", respond=False)
-
 def initiate_chat(message):
     try:
         if not uploaded_file_path:
             safe_send_to_chat("❌ Please upload a CSV file first.", user="Assistant", respond=False)
             return
 
+        status_pane.object = "🔄 Ejecutando pipeline, por favor espera..."
         timer = threading.Timer(MAX_EXECUTION_TIME, timeout_handler)
         timer.start()
 
         resultado = ejecutar_interaccion(message)
 
         safe_send_to_chat(resultado, user="Assistant", respond=False)
-
-        if os.path.exists(FINAL_DATA_PATH):
-            df = pd.read_csv(FINAL_DATA_PATH)
-            plot = generate_interactive_plot(df)
-            chat_interface.send(pn.Column("### Data Insights", plot), user="Assistant", respond=False)
-
-        offer_downloads()
-
+        status_pane.object = "✅ Pipeline completado"
         timer.cancel()
     except Exception as e:
+        status_pane.object = "❌ Error durante la ejecución del pipeline"
         safe_send_to_chat(f"❌ General error: {e}", user="Assistant", respond=False)
 
 def callback(contents: str, user: str, instance: pn.chat.ChatInterface):
@@ -113,8 +88,31 @@ chat_interface.callback = callback
 
 # Main Layout
 layout = pn.Column(
-    chat_interface,
-    file_input
+    pn.pane.Markdown("## <span style='color:#4A4A4A'>🤖 Asistente de Aprendizaje Automático</span>", sizing_mode='stretch_width'),
+    pn.Row(
+        pn.Card(status_pane, title="⏳ Estado del Pipeline", width=400),
+        pn.Card(pn.Column("### 📂 Subir Dataset", file_input), width=400),
+    ),
+    pn.Card(chat_interface, title="💬 Conversación", height=500),
+    sizing_mode="stretch_width",
+    width=900
 )
+
+# Mensaje de bienvenida al iniciar la aplicación
+safe_send_to_chat("""🎓 **Bienvenido al Asistente de Aprendizaje Automático**
+
+Este asistente inteligente te guiará paso a paso en la creación y evaluación de pipelines de *machine learning* mediante instrucciones en lenguaje natural.
+
+🧠 Puedes:
+- Subir tus propios conjuntos de datos.
+- Explorar y limpiar datos automáticamente.
+- Configurar y entrenar modelos supervisados.
+- Evaluar el rendimiento de distintas configuraciones.
+
+🗨️ Comienza subiendo un dataset y escribiendo tu primera instrucción, por ejemplo:  
+`Limpia los datos`
+
+¡Estoy listo para ayudarte a construir modelos de forma conversacional!
+""", user="Assistant", respond=False)
 
 layout.servable()

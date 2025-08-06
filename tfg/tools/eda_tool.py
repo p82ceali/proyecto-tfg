@@ -2,13 +2,14 @@ from crewai.tools import BaseTool
 import pandas as pd
 import os
 import csv
+import plotly.express as px
 from typing import Optional
 
 class EDATool(BaseTool):
     name: str = "EDA Tool"
     description: str = (
         "Performs exploratory data analysis on a dataset: shows shape, missing values, data types, "
-        "basic statistics, and top correlations with the target variable if provided."
+        "basic statistics, top correlations with the target variable, and generates an interactive plot. Also detects outliers."
     )
 
     def detect_delimiter(self, file_path):
@@ -51,6 +52,33 @@ class EDATool(BaseTool):
                 corr = df.corr(numeric_only=True)[target_variable].drop(target_variable).sort_values(ascending=False)
                 report.append(f"\n\n🔍 Top correlations with target '{target_variable}':\n")
                 report.append(corr.head(10).to_string())
+
+                # Gráfico interactivo con Plotly
+                fig = px.histogram(df, x=target_variable, title=f"Distribución de '{target_variable}'")
+                fig.update_layout(bargap=0.1)
+                os.makedirs("pipeline_data", exist_ok=True)
+                fig.write_html("pipeline_data/eda_plot.html")
+                report.append("\n\n📈 Se ha generado un histograma interactivo del target en 'pipeline_data/eda_plot.html'")
+
+            # Detección de outliers con IQR
+            numeric_cols = df.select_dtypes(include='number').columns
+            outlier_report = []
+            for col in numeric_cols:
+                Q1 = df[col].quantile(0.25)
+                Q3 = df[col].quantile(0.75)
+                IQR = Q3 - Q1
+                lower_bound = Q1 - 1.5 * IQR
+                upper_bound = Q3 + 1.5 * IQR
+                outliers = df[(df[col] < lower_bound) | (df[col] > upper_bound)]
+                count = outliers.shape[0]
+                if count > 0:
+                    outlier_report.append(f"- '{col}': {count} valores atípicos detectados")
+
+            if outlier_report:
+                report.append("\n\n🚨 Detección de valores atípicos (outliers) con método IQR:")
+                report.extend(outlier_report)
+            else:
+                report.append("\n\n✅ No se detectaron valores atípicos usando el método IQR.")
 
             return "\n".join(report)
 

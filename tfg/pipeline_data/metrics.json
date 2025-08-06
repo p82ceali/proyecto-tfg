@@ -1,0 +1,9 @@
+{
+    "model": "RandomForest",
+    "task_type": "regression",
+    "target": "price",
+    "metrics": {
+        "RMSE": 0.737,
+        "R2 Score": 0.625
+    }
+}

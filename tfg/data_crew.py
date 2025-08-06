@@ -45,8 +45,8 @@ def crear_tarea(pregunta_usuario):
         Instrucciones:
         - Usa el historial para entender el contexto.
         - Si la pregunta pertenece a limpieza de datos: 
-            - Si NO tienes la estrategia de imputación (mean, median, mode, ffill, bfill), PREGÚNTALA al usuario y espera a que responda.
-            - Si ya tienes la estrategia, delega al agente de limpieza de datos y ejecuta sus tools.
+            - Si NO tienes la estrategia de imputación (mean, median, mode, ffill, bfill) o la estrategia de escalado (normalization, standardization) PREGÚNTALOS al usuario y espera a que responda.
+            - Si ya tienes la estrategia de imputacion (mean, median, mode, ffill, bfill) y la estrategia de escalado(normalization, standardization), delega al agente de limpieza de datos pasandole la entrada EXACTA que necesita para la estrategia de imputacion y de escalado y ejecuta sus tools.
         - Si la pregunta pertenece a análisis de datos:
             - Si NO tienes la variable objetivo, PREGÚNTALA al usuario y espera a que responda.
             - Si ya la tienes, delega al agente de análisis de datos y ejecuta sus tools.
