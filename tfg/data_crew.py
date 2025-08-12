@@ -10,6 +10,11 @@ from tools.eda_tool import EDATool
 from tools.feature_selection_tool import FeatureSelector
 from collections import deque
 
+# --- NUEVO: arriba con el resto de imports ---
+import pandas as pd
+from crewai import Crew
+from agents_v2.coordinator_agent import build_coordinator_agent, build_coordinator_task
+
 load_dotenv()
 
 memoria = SharedContext()
@@ -88,3 +93,19 @@ def ejecutar_interaccion(pregunta):
     memoria.add_interaccion(pregunta, resultado)
     memoria.set("ultimo_tema", pregunta)  # Guardamos el último tema
     return str(resultado)
+
+# --- NUEVO: función v2 que usa el coordinador de delegación explícita ---
+def ejecutar_interaccion_v2(pregunta: str) -> str:
+    # 1) Carga el dataset activo
+    df = pd.read_csv("pipeline_data/dataset.csv")
+
+    # 2) Crea coordinador v2 (adjunta dataset a tools de delegación)
+    coordinator = build_coordinator_agent(df)
+    task = build_coordinator_task(coordinator)
+
+    # 3) Ejecuta crew con la petición del usuario
+    crew = Crew(agents=[coordinator], tasks=[task], verbose=True)
+    result = crew.kickoff(inputs={"user_request": pregunta})
+
+    # 4) Devuelve respuesta del sub-agente (ya formateada)
+    return str(result)

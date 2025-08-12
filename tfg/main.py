@@ -7,6 +7,8 @@ import csv
 from dotenv import load_dotenv
 from shared_context import SharedContext
 from data_crew import ejecutar_interaccion
+from data_crew import ejecutar_interaccion_v2  # añade este import
+
 
 # ───────────────────────────────────
 # Initial Setup
@@ -71,7 +73,9 @@ def initiate_chat(message):
         timer = threading.Timer(MAX_EXECUTION_TIME, timeout_handler)
         timer.start()
 
-        resultado = ejecutar_interaccion(message)
+        #resultado = ejecutar_interaccion(message)
+        resultado = ejecutar_interaccion_v2(message)  # ← nuevo
+
 
         safe_send_to_chat(resultado, user="Assistant", respond=False)
         status_pane.object = "✅ Pipeline completado"
