@@ -249,3 +249,4 @@ wrapt==1.17.2
 xyzservices==2025.1.0
 yarl==1.18.3
 zipp==3.21.0
+xgboost==3.0.4

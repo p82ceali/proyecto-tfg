@@ -1,0 +1,241 @@
+# tools/instance_selection_tools.py
+from __future__ import annotations
+from typing import Optional, Type, List
+import os
+import numpy as np
+import pandas as pd
+from pydantic import BaseModel, Field
+from crewai.tools import BaseTool
+
+# =========================
+# Helpers (reutilizables)
+# =========================
+def _get_df(tool: BaseTool) -> pd.DataFrame:
+    df = getattr(tool, "dataset", None)
+    if df is None:
+        raise ValueError("No dataset assigned to tool. Set `tool.dataset = your_dataframe` before running.")
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError("`dataset` must be a pandas DataFrame.")
+    return df
+
+def _numeric_df(df: pd.DataFrame) -> pd.DataFrame:
+    X_num = df.select_dtypes(include=[np.number])
+    if X_num.shape[1] == 0:
+        raise ValueError("No numeric columns available for this operation.")
+    return X_num
+
+# =========================
+# Sampling tools
+# =========================
+class StratifiedSampleInput(BaseModel):
+    target: str = Field(..., description="Target column name for stratification")
+    sample_size: float = Field(0.5, gt=0.0, le=1.0, description="Proportion (0,1] of rows to keep")
+    random_state: Optional[int] = Field(42, description="Random seed")
+
+class StratifiedSampleTool(BaseTool):
+    name: str = "stratified_sample"
+    description: str = (
+        "Subsample using stratified sampling on the target. "
+        "Args: target; Optional: sample_size, random_state. Saves to pipeline_data/dataset.csv"
+    )
+    args_schema: Type[BaseModel] = StratifiedSampleInput
+    dataset: Type[pd.DataFrame] = None
+
+    def _run(self, target: str, sample_size: float = 0.5, random_state: Optional[int] = 42) -> str:
+        from sklearn.model_selection import train_test_split
+        df = _get_df(self)
+        if target not in df.columns:
+            return f"Target '{target}' not found. Available: {list(df.columns)}"
+        X = df.drop(columns=[target]); y = df[target]
+        class_counts = y.value_counts(dropna=False).to_dict()
+        if any(cnt < 2 for cnt in class_counts.values()):
+            return ("Cannot apply stratified sampling: a class has < 2 samples. "
+                    "Use 'random_sample' or 'class_balanced_sample' instead.")
+        X_res, _, y_res, _ = train_test_split(
+            X, y, train_size=sample_size, random_state=random_state, stratify=y
+        )
+        reduced_df = pd.concat([X_res, y_res], axis=1)
+        os.makedirs("pipeline_data", exist_ok=True)
+        path = "pipeline_data/dataset.csv"; reduced_df.to_csv(path, index=False)
+        return ("Stratified sampling applied.\n"
+                f"Original size: {df.shape[0]} → Reduced size: {reduced_df.shape[0]}\n"
+                f"Class distribution (original): {class_counts}\n"
+                f"Saved to: {path}")
+
+class RandomSampleInput(BaseModel):
+    sample_size: float = Field(0.5, gt=0.0, le=1.0, description="Proportion (0,1] of rows to keep")
+    random_state: Optional[int] = Field(42, description="Random seed")
+
+class RandomSampleTool(BaseTool):
+    name: str = "random_sample"
+    description: str = (
+        "Random (non-stratified) subsample. Optional: sample_size, random_state. "
+        "Saves to pipeline_data/dataset.csv"
+    )
+    args_schema: Type[BaseModel] = RandomSampleInput
+    dataset: Type[pd.DataFrame] = None
+
+    def _run(self, sample_size: float = 0.5, random_state: Optional[int] = 42) -> str:
+        from sklearn.model_selection import train_test_split
+        df = _get_df(self)
+        idx = np.arange(len(df))
+        train_idx, _ = train_test_split(idx, train_size=sample_size, random_state=random_state)
+        reduced_df = df.iloc[train_idx].copy()
+        os.makedirs("pipeline_data", exist_ok=True)
+        path = "pipeline_data/dataset.csv"; reduced_df.to_csv(path, index=False)
+        return ("Random sampling applied.\n"
+                f"Original size: {df.shape[0]} → Reduced size: {reduced_df.shape[0]}\n"
+                f"Saved to: {path}")
+
+class ClassBalancedSampleInput(BaseModel):
+    target: str = Field(..., description="Target column name")
+    per_class: Optional[int] = Field(None, gt=0, description="Rows per class")
+    max_total: Optional[int] = Field(None, gt=0, description="Overall cap; per-class quota= floor(max_total / n_classes)")
+    random_state: Optional[int] = Field(42, description="Random seed")
+    shuffle_within_class: bool = Field(True, description="Shuffle rows within each class before selecting")
+
+class ClassBalancedSampleTool(BaseTool):
+    name: str = "class_balanced_sample"
+    description: str = (
+        "Build a class-balanced subset (per_class or max_total). Saves to pipeline_data/dataset.csv"
+    )
+    args_schema: Type[BaseModel] = ClassBalancedSampleInput
+    dataset: Type[pd.DataFrame] = None
+
+    def _run(self, target: str, per_class: Optional[int] = None,
+             max_total: Optional[int] = None, random_state: Optional[int] = 42,
+             shuffle_within_class: bool = True) -> str:
+        rng = np.random.default_rng(random_state)
+        df = _get_df(self)
+        if target not in df.columns:
+            return f"Target '{target}' not found. Available: {list(df.columns)}"
+        n_classes = df[target].nunique(dropna=False)
+        if per_class is None and max_total is None:
+            return "Provide either 'per_class' or 'max_total'."
+        if per_class is None and max_total is not None:
+            per_class = max(1, max_total // max(1, n_classes))
+        parts = []; class_counts = {}
+        for cls, sub in df.groupby(target, dropna=False):
+            idx = sub.index.to_numpy()
+            if shuffle_within_class: rng.shuffle(idx)
+            take = min(per_class, len(idx))
+            parts.append(sub.loc[idx[:take]])
+            class_counts[cls] = int(take)
+        reduced_df = pd.concat(parts, axis=0).reset_index(drop=True)
+        os.makedirs("pipeline_data", exist_ok=True)
+        path = "pipeline_data/dataset.csv"; reduced_df.to_csv(path, index=False)
+        return ( "Class-balanced sampling applied.\n"
+                 f"Per-class quota: {per_class}\n"
+                 f"Class sample counts: {class_counts}\n"
+                 f"Total: {reduced_df.shape[0]} rows. Saved to: {path}" )
+
+class ClusteredSampleInput(BaseModel):
+    n_clusters: int = Field(..., ge=1, description="Number of clusters")
+    samples_per_cluster: int = Field(1, ge=1, description="Representatives per cluster")
+    random_state: Optional[int] = Field(42, description="Random seed")
+    use_features: Optional[List[str]] = Field(None, description="Optional subset of features (numeric enforced)")
+
+class ClusteredSampleTool(BaseTool):
+    name: str = "clustered_sample"
+    description: str = (
+        "Diversity-based sampling via KMeans on numeric features; selects nearest points to centroids. "
+        "Saves to pipeline_data/dataset.csv"
+    )
+    args_schema: Type[BaseModel] = ClusteredSampleInput
+    dataset: Type[pd.DataFrame] = None
+
+    def _run(self, n_clusters: int, samples_per_cluster: int = 1,
+             random_state: Optional[int] = 42, use_features: Optional[List[str]] = None) -> str:
+        from sklearn.cluster import KMeans
+        from sklearn.metrics import pairwise_distances_argmin_min
+        df = _get_df(self)
+        X = df if use_features is None else df[use_features]
+        X_num = _numeric_df(X).to_numpy()
+        km = KMeans(n_clusters=n_clusters, n_init=10, random_state=random_state)
+        labels = km.fit_predict(X_num)
+        chosen_idx: List[int] = []
+        for cl in range(n_clusters):
+            cluster_idx = np.where(labels == cl)[0]
+            if cluster_idx.size == 0: continue
+            cent = km.cluster_centers_[cl].reshape(1, -1)
+            _, nn_idx = pairwise_distances_argmin_min(X_num[cluster_idx], cent)
+            sel = cluster_idx[nn_idx[0]]; chosen_idx.append(sel)
+            if samples_per_cluster > 1:
+                dists = np.linalg.norm(X_num[cluster_idx] - km.cluster_centers_[cl], axis=1)
+                order = np.argsort(dists)
+                extra = [cluster_idx[i] for i in order if cluster_idx[i] != sel][: max(0, samples_per_cluster - 1)]
+                chosen_idx.extend(extra)
+        reduced_df = df.iloc[sorted(set(chosen_idx))].copy()
+        os.makedirs("pipeline_data", exist_ok=True)
+        path = "pipeline_data/dataset.csv"; reduced_df.to_csv(path, index=False)
+        return ( "Clustered sampling applied (KMeans).\n"
+                 f"Clusters: {n_clusters}, representatives/cluster: {samples_per_cluster}.\n"
+                 f"Total selected: {reduced_df.shape[0]} rows. Saved to: {path}" )
+
+# =========================
+# Split tools
+# =========================
+class TrainValTestSplitInput(BaseModel):
+    target: Optional[str] = Field(None, description="Optional target for stratify")
+    test_size: float = Field(0.2, gt=0.0, lt=1.0, description="Proportion for test set")
+    val_size: float = Field(0.1, ge=0.0, lt=1.0, description="Proportion for val set (from remaining after test)")
+    stratify: bool = Field(True, description="Use stratified split if target provided")
+    random_state: Optional[int] = Field(42, description="Random seed")
+
+class TrainValTestSplitTool(BaseTool):
+    name: str = "train_val_test_split"
+    description: str = (
+        "Create reproducible train/val/test splits. If 'target' and 'stratify' True → stratified. "
+        "Saves to pipeline_data/train.csv, val.csv, test.csv"
+    )
+    args_schema: Type[BaseModel] = TrainValTestSplitInput
+    dataset: Type[pd.DataFrame] = None
+
+    def _run(self, target: Optional[str] = None, test_size: float = 0.2,
+             val_size: float = 0.1, stratify: bool = True, random_state: Optional[int] = 42) -> str:
+        from sklearn.model_selection import train_test_split
+        df = _get_df(self)
+        if target is not None and target not in df.columns:
+            return f"Target '{target}' not found. Available: {list(df.columns)}"
+        strat = df[target] if (target and stratify and target in df.columns) else None
+        trainval_df, test_df = train_test_split(df, test_size=test_size, random_state=random_state, stratify=strat)
+        effective_val = val_size / (1.0 - test_size) if (1.0 - test_size) > 0 else 0.0
+        strat2 = trainval_df[target] if (target and stratify and target in df.columns) else None
+        train_df, val_df = train_test_split(trainval_df, test_size=effective_val, random_state=random_state, stratify=strat2)
+        os.makedirs("pipeline_data", exist_ok=True)
+        train_path, val_path, test_path = "pipeline_data/train.csv", "pipeline_data/val.csv", "pipeline_data/test.csv"
+        train_df.to_csv(train_path, index=False); val_df.to_csv(val_path, index=False); test_df.to_csv(test_path, index=False)
+        return ( "Train/Val/Test split created.\n"
+                 f"Sizes → train: {train_df.shape[0]}, val: {val_df.shape[0]}, test: {test_df.shape[0]}\n"
+                 f"Saved to: {train_path}, {val_path}, {test_path}" )
+
+class TimeSeriesSplitInput(BaseModel):
+    time_column: str = Field(..., description="Timestamp/date column")
+    test_size: float = Field(0.2, gt=0.0, lt=1.0, description="Proportion for test (last fraction)")
+    val_size: float = Field(0.1, ge=0.0, lt=1.0, description="Proportion for validation (from remaining after test)")
+
+class TimeSeriesSplitTool(BaseTool):
+    name: str = "time_series_split"
+    description: str = (
+        "Chronological train/val/test split (no leakage). "
+        "Saves to pipeline_data/train.csv, val.csv, test.csv"
+    )
+    args_schema: Type[BaseModel] = TimeSeriesSplitInput
+    dataset: Type[pd.DataFrame] = None
+
+    def _run(self, time_column: str, test_size: float = 0.2, val_size: float = 0.1) -> str:
+        df = _get_df(self)
+        if time_column not in df.columns:
+            return f"Time column '{time_column}' not found. Available: {list(df.columns)}"
+        tmp = df.copy()
+        tmp[time_column] = pd.to_datetime(tmp[time_column], errors="coerce")
+        tmp = tmp.sort_values(time_column); tmp = tmp[tmp[time_column].notna()]
+        n = len(tmp); n_test = max(1, int(round(n * test_size))); n_trainval = n - n_test
+        n_val = max(0, int(round(n_trainval * val_size))); n_train = n_trainval - n_val
+        train_df = tmp.iloc[:n_train]; val_df = tmp.iloc[n_train:n_train+n_val]; test_df = tmp.iloc[n_train+n_val:]
+        os.makedirs("pipeline_data", exist_ok=True)
+        train_path, val_path, test_path = "pipeline_data/train.csv", "pipeline_data/val.csv", "pipeline_data/test.csv"
+        train_df.to_csv(train_path, index=False); val_df.to_csv(val_path, index=False); test_df.to_csv(test_path, index=False)
+        return ( "Time-series split created (chronological).\n"
+                 f"Sizes → train: {train_df.shape[0]}, val: {val_df.shape[0]}, test: {test_df.shape[0]}\n"
+                 f"Saved to: {train_path}, {val_path}, {test_path}" )

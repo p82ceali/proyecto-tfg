@@ -7,7 +7,6 @@ import csv
 from dotenv import load_dotenv
 from shared_context import SharedContext
 from data_crew import ejecutar_interaccion
-from data_crew import ejecutar_interaccion_v2  # añade este import
 
 
 # ───────────────────────────────────
@@ -73,8 +72,7 @@ def initiate_chat(message):
         timer = threading.Timer(MAX_EXECUTION_TIME, timeout_handler)
         timer.start()
 
-        #resultado = ejecutar_interaccion(message)
-        resultado = ejecutar_interaccion_v2(message)  # ← nuevo
+        resultado = ejecutar_interaccion(message) 
 
 
         safe_send_to_chat(resultado, user="Assistant", respond=False)
@@ -103,20 +101,22 @@ layout = pn.Column(
 )
 
 # Mensaje de bienvenida al iniciar la aplicación
-safe_send_to_chat("""🎓 **Bienvenido al Asistente de Aprendizaje Automático**
+safe_send_to_chat("""# 🤖 Welcome to the Automated Machine Learning Assistant
 
-Este asistente inteligente te guiará paso a paso en la creación y evaluación de pipelines de *machine learning* mediante instrucciones en lenguaje natural.
+This system helps you **configure, train, and evaluate supervised learning pipelines**  
+automatically, guided by your **natural language instructions**.
 
-🧠 Puedes:
-- Subir tus propios conjuntos de datos.
-- Explorar y limpiar datos automáticamente.
-- Configurar y entrenar modelos supervisados.
-- Evaluar el rendimiento de distintas configuraciones.
+📂 Upload your dataset in CSV format.  
+🔍 Explore and analyze your data with the EDA agent.  
+🧹 Clean and preprocess features intelligently.  
+🎯 Select the most relevant features for your model.  
+📊 Perform sampling or train/test splits.  
+⚙️ Train and evaluate supervised models with clear performance metrics.  
 
-🗨️ Comienza subiendo un dataset y escribiendo tu primera instrucción, por ejemplo:  
-`Limpia los datos`
+All interactions are powered by a **multi-agent system**, ensuring that each pipeline step is executed optimally.
 
-¡Estoy listo para ayudarte a construir modelos de forma conversacional!
+✨ Start by uploading your dataset and simply asking, in natural language, what you want to do!
+
 """, user="Assistant", respond=False)
 
 layout.servable()

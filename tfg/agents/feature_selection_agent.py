@@ -1,36 +1,59 @@
-# 📁 feature_selection_agent.py
+# feature_selection_agent_structured_tools.py
+from crewai import Agent, Task, LLM
+from tools.feature_selection_tools import (
+    SelectKBestTool, VarianceThresholdTool,
+    RFImportanceSelectTool, CorrelationFilterTool
+)
 
-from crewai import Agent, LLM
-from tools.feature_selection_tool import FeatureSelector
-from crewai_tools import DirectoryReadTool
-from shared_context import SharedContext
+from crewai import Agent, Task, LLM
+
+from dotenv import load_dotenv
 import os
 
 
-class FeatureSelectionAgent:
-    def create_agent(self):
-        feature_tool = FeatureSelector()
-        data_read = DirectoryReadTool(directory='pipeline_data')
+load_dotenv()
+llm = LLM(
+    model="gemini/gemini-2.0-flash-lite",
+    api_key=os.getenv("GOOGLE_API_KEY"),
+    custom_llm_provider="gemini",
+)
 
-        return Agent(
-            role="lead feature engineer",
-            goal="""[For Data Scientists] Improve machine learning model performance by identifying and selecting the most predictive features. 
-                    Use advanced techniques such as mutual information, L1 regularization, SHAP values, and recursive feature elimination (RFE). 
-                    Provide detailed explanations for each selected feature and its importance to ensure transparency.""",
-            backstory="""You are a world-renowned expert in feature engineering with extensive experience in optimizing machine learning models. 
-                         As a former NVIDIA AI researcher, you hold 12 patents in feature selection methodologies and have authored several 
-                         influential papers on feature engineering. You developed the AutoFeast library for automated feature selection in PyTorch, 
-                         which has revolutionized feature engineering workflows. Your mission is to assist ML developers in identifying the most 
-                         relevant features to maximize model accuracy, reduce overfitting, and improve computational efficiency.""",
-            tools=[feature_tool, data_read],
-            llm=LLM(
-                model="gemini/gemini-2.5-flash-lite",
-                api_key=os.getenv("GOOGLE_API_KEY"),
-                custom_llm_provider="gemini"
-            ),
-            reasoning=True,
-            max_reasoning_attempts=3,
-            respect_context_window=True,
-            max_iter=15,
-            verbose=True
-        )
+
+def build_agent() -> Agent:
+    return Agent(
+        role="Feature Selection Agent",
+        goal=(
+            "Understand the user's request and call only the necessary feature-selection tool. "
+            "When calling a tool, fill the structured parameters according to the tool's schema. "
+            "Ask a brief clarifying question if the request lacks required parameters (e.g., missing 'target' or 'k')."
+        ),
+        backstory=(
+            "You are precise and concise. You don't run unnecessary tools. "
+            "You prefer structured inputs and return readable results (selected vs removed features)."
+        ),
+        tools=[
+            SelectKBestTool(),
+            VarianceThresholdTool(),
+            RFImportanceSelectTool(),
+            CorrelationFilterTool(),
+        ],
+        verbose=True,
+        llm=llm,
+    )
+
+
+def build_task(agent: Agent) -> Task:
+    return Task(
+        description=(
+            "User request: {user_request}\n\n"
+            "Use ONLY the necessary tool to answer. "
+            "If a tool needs parameters, pass them using the tool's structured fields (do NOT serialize JSON strings). "
+            "If the request is underspecified (e.g., missing target), ask one short follow-up question and stop."
+        ),
+        expected_output=(
+            "A concise answer that states: method applied, parameters used, and selected/removed features."
+        ),
+        agent=agent,
+    )
+
+

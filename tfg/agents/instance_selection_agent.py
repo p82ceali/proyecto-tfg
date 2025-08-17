@@ -1,34 +1,64 @@
-from crewai import Agent, LLM
-from tools.instance_selection_tool import InstanceSelectionTool
-from crewai_tools import DirectoryReadTool
-from shared_context import SharedContext  # 👈 Añadido
+# instance_selection_agent_structured_multi_tools.py
+from __future__ import annotations
+from tools.instance_selection_tools import (
+    StratifiedSampleTool, RandomSampleTool, ClassBalancedSampleTool, ClusteredSampleTool,
+    TrainValTestSplitTool, TimeSeriesSplitTool
+)
+
+from crewai import Agent, Task, LLM
+
+from dotenv import load_dotenv
 import os
 
+# =====================================================================
+# LLM Setup
+# =====================================================================
+load_dotenv()
+llm = LLM(
+    model="gemini/gemini-2.0-flash-lite",
+    api_key=os.getenv("GOOGLE_API_KEY"),
+    custom_llm_provider="gemini",
+)
 
-class InstanceSelectionAgent:
-    def create_agent(self):
-        instance_tool = InstanceSelectionTool()
-        data_read = DirectoryReadTool(directory='pipeline_data')
 
-        return Agent(
-            role="data sampling architect",
-            goal="""[For ML Engineers] Optimize dataset size while preserving statistical integrity using advanced sampling techniques, 
-                    including stratified sampling, adaptive sampling, and clustering-based sampling. Ensure that the selected subset 
-                    maintains representativeness and minimizes bias. Provide detailed explanations for the sampling strategy used.""",
-            backstory="""You are a leading expert in data sampling strategies for machine learning. 
-                         As the author of "Intelligent Sampling for Deep Learning" (O'Reilly, 2023), you have pioneered innovative techniques 
-                         in data reduction. You designed Uber’s ML sampling framework, enabling real-time predictions while minimizing 
-                         computational costs. Your mission is to assist ML developers in selecting representative subsets of data that 
-                         preserve statistical integrity and maximize model performance while reducing computational overhead.""",
-            tools=[instance_tool, data_read],
-            llm=LLM(
-                model="gemini/gemini-2.5-flash-lite",
-                api_key=os.getenv("GOOGLE_API_KEY"),
-                custom_llm_provider="gemini"
-            ),
-            reasoning=True,
-            max_reasoning_attempts=3,
-            respect_context_window=True,
-            max_iter=15,
-            verbose=True
-        )
+
+# =====================================================================
+# Agent + Task wiring
+# =====================================================================
+
+def build_agent() -> Agent:
+    return Agent(
+        role="Instance Selection & Splitting Expert",
+        goal=(
+            "Understand the user's request and call only the necessary tool: stratified/random/class-balanced/clustered "
+            "sampling or dataset splitting (train/val/test, time series). Ask a short question if required params are missing."
+        ),
+        backstory=(
+            "You are a data sampling specialist who minimizes bias and preserves representativeness. "
+            "You never run unnecessary tools and you always report dataset sizes and save locations."
+        ),
+        tools=[
+            StratifiedSampleTool(),
+            RandomSampleTool(),
+            ClassBalancedSampleTool(),
+            ClusteredSampleTool(),
+            TrainValTestSplitTool(),
+            TimeSeriesSplitTool(),
+        ],
+        verbose=True,
+        llm=llm,
+    )
+
+
+def build_task(agent: Agent) -> Task:
+    return Task(
+        description=(
+            "User request: {user_request}\n\n"
+            "Use ONLY the necessary tool to answer. If a required parameter (e.g., target, time_column) is missing, "
+            "ask one brief clarifying question and stop."
+        ),
+        expected_output=(
+            "A concise answer stating: method applied, parameters used, size(s) obtained, and save location(s)."
+        ),
+        agent=agent,
+    )
