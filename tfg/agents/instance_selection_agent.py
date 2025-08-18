@@ -53,6 +53,7 @@ def build_agent() -> Agent:
 def build_task(agent: Agent) -> Task:
     return Task(
         description=(
+            "CONVERSATION CONTEXT (last turns):\n{chat_context}\n\n"
             "User request: {user_request}\n\n"
             "Use ONLY the necessary tool to answer. If a required parameter (e.g., target, time_column) is missing, "
             "ask one brief clarifying question and stop."

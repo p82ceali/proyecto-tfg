@@ -41,6 +41,7 @@ def build_agent():
 def build_task(agent: Agent) -> Task:
     return Task(
         description=(
+            "CONVERSATION CONTEXT (last turns):\n{chat_context}\n\n"
             "User request: {user_request}\n\n"
             "Use ONLY the necessary tools to answer. "
             "If a tool needs parameters, pass them using the tool's structured fields "

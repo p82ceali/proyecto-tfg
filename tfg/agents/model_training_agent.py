@@ -53,6 +53,7 @@ def build_model_training_agent() -> Agent:
 def build_task(agent: Agent) -> Task:
     return Task(
         description=(
+            "CONVERSATION CONTEXT (last turns):\n{chat_context}\n\n"
             "User request: {user_request}"
             "Choose and execute ONLY the relevant training tool (model_training). "
             "Fill in structured parameters according to the Pydantic schema. "

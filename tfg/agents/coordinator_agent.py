@@ -42,6 +42,7 @@ def _attach_dataset_to_agent_tools(agent: Agent, df: pd.DataFrame) -> None:
 # ---------------------------------------------------------------------
 class DelegateInput(BaseModel):
     user_request: str = Field(..., description="Raw user request to forward to the chosen sub‑agent.")
+    chat_context: Optional[str] = Field("", description="Window of chat history.")
 
 
 # ---------------------------------------------------------------------
@@ -56,7 +57,7 @@ class DelegateToAnalysisTool(BaseTool):
     args_schema: Type[BaseModel] = DelegateInput
     dataset: Type[pd.DataFrame] = None
 
-    def _run(self, user_request: str) -> str:
+    def _run(self, user_request: str, chat_context: str = "") -> str:
         if not hasattr(self, "dataset") or not isinstance(self.dataset, pd.DataFrame):
             return "No dataset attached to analysis delegate. Attach a DataFrame via tool.dataset = df."
         sub_agent = analysis.build_agent()
@@ -64,7 +65,10 @@ class DelegateToAnalysisTool(BaseTool):
         _attach_dataset_to_agent_tools(sub_agent, self.dataset)
         sub_task = analysis.build_task(sub_agent)
         sub_crew = Crew(agents=[sub_agent], tasks=[sub_task], verbose=False)
-        result = sub_crew.kickoff(inputs={"user_request": user_request})
+        result = sub_crew.kickoff(inputs={
+            "user_request": user_request,
+            "chat_context": chat_context,  # <-- PROPAGADO
+        })
         return "🔀 Route: ANALYSIS\n" + str(result)
 
 
@@ -78,7 +82,7 @@ class DelegateToPreprocessingTool(BaseTool):
     dataset: Type[pd.DataFrame] = None
     autosave_path: Optional[str] = "pipeline_data/dataset.csv"
 
-    def _run(self, user_request: str) -> str:
+    def _run(self, user_request: str, chat_context: str = "") -> str:
         if not hasattr(self, "dataset") or not isinstance(self.dataset, pd.DataFrame):
             return "No dataset attached to preprocessing delegate. Attach a DataFrame via tool.dataset = df."
         sub_agent = preprocessing.build_preprocessing_agent()
@@ -86,7 +90,10 @@ class DelegateToPreprocessingTool(BaseTool):
         _attach_dataset_to_agent_tools(sub_agent, self.dataset)
         sub_task = preprocessing.build_task(sub_agent)
         sub_crew = Crew(agents=[sub_agent], tasks=[sub_task], verbose=False)
-        result = sub_crew.kickoff(inputs={"user_request": user_request})
+        result = sub_crew.kickoff(inputs={
+            "user_request": user_request,
+            "chat_context": chat_context,  # <-- PROPAGADO
+        })
 
         if self.autosave_path:
             try:
@@ -109,7 +116,7 @@ class DelegateToFeatureSelectionTool(BaseTool):
     dataset: Type[pd.DataFrame] = None
     autosave_path: Optional[str] = "pipeline_data/dataset.csv"
 
-    def _run(self, user_request: str) -> str:
+    def _run(self, user_request: str, chat_context: str = "") -> str:
         if not hasattr(self, "dataset") or not isinstance(self.dataset, pd.DataFrame):
             return "No dataset attached to feature‑selection delegate. Attach a DataFrame via tool.dataset = df."
         sub_agent = fsel.build_agent()
@@ -117,7 +124,10 @@ class DelegateToFeatureSelectionTool(BaseTool):
         _attach_dataset_to_agent_tools(sub_agent, self.dataset)
         sub_task = fsel.build_task(sub_agent)
         sub_crew = Crew(agents=[sub_agent], tasks=[sub_task], verbose=False)
-        result = sub_crew.kickoff(inputs={"user_request": user_request})
+        result = sub_crew.kickoff(inputs={
+            "user_request": user_request,
+            "chat_context": chat_context,  # <-- PROPAGADO
+        })
 
         if self.autosave_path:
             try:
@@ -140,7 +150,7 @@ class DelegateToInstanceSelectionTool(BaseTool):
     dataset: Type[pd.DataFrame] = None
     autosave_path: Optional[str] = "pipeline_data/dataset.csv"
 
-    def _run(self, user_request: str) -> str:
+    def _run(self, user_request: str, chat_context: str = "") -> str:
         if not hasattr(self, "dataset") or not isinstance(self.dataset, pd.DataFrame):
             return "No dataset attached to instance‑selection delegate. Attach a DataFrame via tool.dataset = df."
         sub_agent = isel.build_agent()
@@ -148,7 +158,10 @@ class DelegateToInstanceSelectionTool(BaseTool):
         _attach_dataset_to_agent_tools(sub_agent, self.dataset)
         sub_task = isel.build_task(sub_agent)
         sub_crew = Crew(agents=[sub_agent], tasks=[sub_task], verbose=False)
-        result = sub_crew.kickoff(inputs={"user_request": user_request})
+        result = sub_crew.kickoff(inputs={
+            "user_request": user_request,
+            "chat_context": chat_context,  # <-- PROPAGADO
+        })
 
         if self.autosave_path:
             try:
@@ -172,7 +185,7 @@ class DelegateToModelTrainingTool(BaseTool):
     dataset: Type[pd.DataFrame] = None
     artifacts_dir: Optional[str] = "pipeline_data/artifacts"
 
-    def _run(self, user_request: str) -> str:
+    def _run(self, user_request: str, chat_context: str = "") -> str:
         if not hasattr(self, "dataset") or not isinstance(self.dataset, pd.DataFrame):
             return "No dataset attached to model‑training delegate. Attach a DataFrame via tool.dataset = df."
 
@@ -181,7 +194,10 @@ class DelegateToModelTrainingTool(BaseTool):
         _attach_dataset_to_agent_tools(sub_agent, self.dataset)
         sub_task = mtrain.build_task(sub_agent)
         sub_crew = Crew(agents=[sub_agent], tasks=[sub_task], verbose=False)
-        result = sub_crew.kickoff(inputs={"user_request": user_request})
+        result = sub_crew.kickoff(inputs={
+            "user_request": user_request,
+            "chat_context": chat_context,  # <-- PROPAGADO
+        })
         return "🔀 Route: MODEL_TRAINING\n" + str(result)
 
 
@@ -220,6 +236,7 @@ def build_coordinator_agent(df: pd.DataFrame) -> Agent:
 def build_coordinator_task(agent: Agent) -> Task:
     return Task(
         description=(
+            "CONVERSATION CONTEXT (last turns):\n{chat_context}\n\n"
             "User request: {user_request}\n\n"
             "Decide:\n"
             "- If DESCRIPTIVE ANALYSIS or stats: call delegate_to_analysis.\n"
@@ -235,28 +252,3 @@ def build_coordinator_task(agent: Agent) -> Task:
     )
 
 
-# ---------------------------------------------------------------------
-# Optional demo
-# ---------------------------------------------------------------------
-if __name__ == "__main__":
-    df = pd.DataFrame({
-        "x1": [1,2,3,4,5,6,7,8,9,10],
-        "x2": [0,1,0,1,0,1,0,1,0,1],
-        "y":  [0,0,0,1,1,1,1,1,0,0],
-    })
-    agent = build_coordinator_agent(df)
-    task = build_coordinator_task(agent)
-    crew = Crew(agents=[agent], tasks=[task], verbose=True)
-
-    examples = [
-        "Compute mean of x1",
-        "One‑hot encode x2",
-        "Select k best features target=y k=1 scoring=f_classif",
-        "Stratified sample target=y sample_size=0.6",
-        "Train a classification random_forest with target y and test_size 0.3",
-    ]
-
-    for req in examples:
-        print("\n" + "="*100)
-        print("USER:", req)
-        print(crew.kickoff(inputs={"user_request": req}))

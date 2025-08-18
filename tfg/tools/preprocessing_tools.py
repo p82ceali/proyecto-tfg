@@ -5,6 +5,8 @@ import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from crewai.tools import BaseTool
 
+from shared_context import CTX
+
 def _get_df(tool: BaseTool) -> pd.DataFrame:
     df = getattr(tool, "dataset", None)
     if df is None or not isinstance(df, pd.DataFrame):
@@ -97,6 +99,7 @@ class DiscretizeFeatureTool(BaseTool):
             df.drop(columns=[column], inplace=True)
 
         desc = df[new_column].describe().to_string()
+        CTX.add_decision("preprocessing", f"Discretize '{column}' -> '{new_column}'")
         return f"Created '{new_column}'.\n{desc}"
 
 class OneHotEncodeInput(BaseModel):
@@ -125,4 +128,6 @@ class OneHotEncodeFeatureTool(BaseTool):
         df[new_cols] = dummies
         if drop_original:
             df.drop(columns=[column], inplace=True)
+            
+        CTX.add_decision("preprocessing", f"OneHot '{column}' -> {len(new_cols)} columnas")
         return "One-hot encoding created columns:\n" + ", ".join(new_cols) + "\n\n" + _bool_col_summary(df, new_cols)

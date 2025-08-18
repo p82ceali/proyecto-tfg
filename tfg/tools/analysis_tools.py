@@ -6,6 +6,8 @@ import pandas as pd
 from pydantic import BaseModel, Field
 from crewai.tools import BaseTool
 
+from shared_context import CTX
+
 def _get_df(tool: BaseTool) -> pd.DataFrame:
     df = getattr(tool, "dataset", None)
     if df is None or not isinstance(df, pd.DataFrame):
@@ -33,7 +35,9 @@ class DescribeFeatureTool(BaseTool):
         if ser.dtype == "object" or pd.api.types.is_categorical_dtype(ser):
             vc = ser.value_counts(dropna=False).head(10)
             lines += ["", "Top 10 values (incl. NaN):", vc.to_string()]
-        return "\n".join(lines)
+        out="\n".join(lines)
+        CTX.add_decision("analysis", f"describe({column}) ejecutado")
+        return out
 
 SUPPORTED_STATS = {"mean","median","mode","std","var","min","max","sum","count","nunique","skew","kurtosis"}
 
@@ -81,4 +85,6 @@ class ComputeStatisticTool(BaseTool):
                 parts.append(f"{groupby}={g!r}: {stat}({column}) = {compute_on_series(sub[column])}")
             return "\n".join(parts)
 
-        return f"{stat}({column}) = {compute_on_series(df[column])}"
+        msg= f"{stat}({column}) = {compute_on_series(df[column])}"
+        CTX.add_decision("analysis", f"stat {stat} sobre {column}" + (f" por {groupby}" if groupby else ""))
+        return msg

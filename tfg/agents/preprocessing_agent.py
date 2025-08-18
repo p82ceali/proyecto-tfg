@@ -35,6 +35,7 @@ def build_preprocessing_agent() -> Agent:
 def build_task(agent: Agent) -> Task:
     return Task(
         description=(
+            "CONVERSATION CONTEXT (last turns):\n{chat_context}\n\n"
             "User request: {user_request}\n\n"
             "Choose and run only the relevant preprocessing tool. "
             "Fill the structured parameters according to the tool's schema. "

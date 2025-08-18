@@ -7,6 +7,8 @@ import pandas as pd
 from pydantic import BaseModel, Field
 from crewai.tools import BaseTool
 
+from shared_context import CTX
+
 # =========================
 # Helpers (reutilizables)
 # =========================
@@ -57,6 +59,7 @@ class StratifiedSampleTool(BaseTool):
         reduced_df = pd.concat([X_res, y_res], axis=1)
         os.makedirs("pipeline_data", exist_ok=True)
         path = "pipeline_data/dataset.csv"; reduced_df.to_csv(path, index=False)
+        CTX.add_decision("instance_selection", f"Stratified sample target={target}, size={reduced_df.shape[0]}")
         return ("Stratified sampling applied.\n"
                 f"Original size: {df.shape[0]} → Reduced size: {reduced_df.shape[0]}\n"
                 f"Class distribution (original): {class_counts}\n"
@@ -83,6 +86,7 @@ class RandomSampleTool(BaseTool):
         reduced_df = df.iloc[train_idx].copy()
         os.makedirs("pipeline_data", exist_ok=True)
         path = "pipeline_data/dataset.csv"; reduced_df.to_csv(path, index=False)
+        CTX.add_decision("instance_selection", f"Random sample size={reduced_df.shape[0]}")
         return ("Random sampling applied.\n"
                 f"Original size: {df.shape[0]} → Reduced size: {reduced_df.shape[0]}\n"
                 f"Saved to: {path}")
@@ -124,6 +128,7 @@ class ClassBalancedSampleTool(BaseTool):
         reduced_df = pd.concat(parts, axis=0).reset_index(drop=True)
         os.makedirs("pipeline_data", exist_ok=True)
         path = "pipeline_data/dataset.csv"; reduced_df.to_csv(path, index=False)
+        CTX.add_decision("instance_selection", f"Class-balanced per_class={per_class}")
         return ( "Class-balanced sampling applied.\n"
                  f"Per-class quota: {per_class}\n"
                  f"Class sample counts: {class_counts}\n"
@@ -168,6 +173,7 @@ class ClusteredSampleTool(BaseTool):
         reduced_df = df.iloc[sorted(set(chosen_idx))].copy()
         os.makedirs("pipeline_data", exist_ok=True)
         path = "pipeline_data/dataset.csv"; reduced_df.to_csv(path, index=False)
+        CTX.add_decision("instance_selection", f"KMeans n_clusters={n_clusters}, reps={samples_per_cluster}")
         return ( "Clustered sampling applied (KMeans).\n"
                  f"Clusters: {n_clusters}, representatives/cluster: {samples_per_cluster}.\n"
                  f"Total selected: {reduced_df.shape[0]} rows. Saved to: {path}" )
@@ -205,6 +211,7 @@ class TrainValTestSplitTool(BaseTool):
         os.makedirs("pipeline_data", exist_ok=True)
         train_path, val_path, test_path = "pipeline_data/train.csv", "pipeline_data/val.csv", "pipeline_data/test.csv"
         train_df.to_csv(train_path, index=False); val_df.to_csv(val_path, index=False); test_df.to_csv(test_path, index=False)
+        CTX.add_decision("splitting", f"Train/Val/Test split test={test_size}, val={val_size}")
         return ( "Train/Val/Test split created.\n"
                  f"Sizes → train: {train_df.shape[0]}, val: {val_df.shape[0]}, test: {test_df.shape[0]}\n"
                  f"Saved to: {train_path}, {val_path}, {test_path}" )
@@ -236,6 +243,7 @@ class TimeSeriesSplitTool(BaseTool):
         os.makedirs("pipeline_data", exist_ok=True)
         train_path, val_path, test_path = "pipeline_data/train.csv", "pipeline_data/val.csv", "pipeline_data/test.csv"
         train_df.to_csv(train_path, index=False); val_df.to_csv(val_path, index=False); test_df.to_csv(test_path, index=False)
+        CTX.add_decision("splitting", f"TimeSeriesSplit col={time_column}, test={test_size}, val={val_size}")
         return ( "Time-series split created (chronological).\n"
                  f"Sizes → train: {train_df.shape[0]}, val: {val_df.shape[0]}, test: {test_df.shape[0]}\n"
                  f"Saved to: {train_path}, {val_path}, {test_path}" )

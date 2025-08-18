@@ -6,6 +6,8 @@ import pandas as pd
 from pydantic import BaseModel, Field
 from crewai.tools import BaseTool
 
+from shared_context import CTX
+
 def _get_df(tool: BaseTool) -> pd.DataFrame:
     df = getattr(tool, "dataset", None)
     if df is None or not isinstance(df, pd.DataFrame):
@@ -49,7 +51,9 @@ class SelectKBestTool(BaseTool):
         lines = [f"SelectKBest(scoring={scoring}, k={k})", f"Selected: {selected}"]
         if dropped: lines.append(f"Ignored non-numeric columns: {dropped}")
         if removed: lines.append(f"Removed: {removed}")
-        return "\n".join(lines)
+        out = "\n".join(lines)
+        CTX.add_decision("feature_selection", f"SelectKBest({scoring}, k={k}) -> {selected}")
+        return out
 
 # -------- VarianceThreshold --------
 class VarianceThresholdInput(BaseModel):
@@ -70,7 +74,9 @@ class VarianceThresholdTool(BaseTool):
         vt = VarianceThreshold(threshold=threshold).fit(X_num)
         selected = list(X_num.columns[vt.get_support()])
         removed = [c for c in X_num.columns if c not in selected]
-        return f"VarianceThreshold(threshold={threshold})\nSelected: {selected}\nRemoved: {removed}"
+        msg = f"VarianceThreshold(threshold={threshold})\nSelected: {selected}\nRemoved: {removed}"
+        CTX.add_decision("feature_selection", f"VarianceThreshold(th={threshold}) -> {len(selected)} keep")
+        return msg
 
 # -------- RF Importances --------
 class RFImportanceInput(BaseModel):
@@ -107,7 +113,9 @@ class RFImportanceSelectTool(BaseTool):
         lines += [f"- {name}: {imp:.6f}" for name, imp in ranked]
         dropped = [c for c in X.columns if c not in X_num.columns]
         if dropped: lines.append(f"Ignored non-numeric columns: {dropped}")
-        return "\n".join(lines)
+        out = "\n".join(lines)
+        CTX.add_decision("feature_selection", f"RF rank top={top or len(ranked)}")
+        return out
 
 # -------- Correlation filter --------
 class CorrelationFilterInput(BaseModel):
@@ -135,4 +143,6 @@ class CorrelationFilterTool(BaseTool):
         abs_corr = corr[target].abs().sort_values(ascending=False)
         selected = abs_corr[abs_corr >= threshold].index.tolist()
         removed = [c for c in X_num.columns if c not in selected]
-        return f"CorrelationFilter(threshold={threshold})\nSelected: {selected}\nRemoved: {removed}"
+        msg = f"CorrelationFilter(threshold={threshold})\nSelected: {selected}\nRemoved: {removed}"
+        CTX.add_decision("feature_selection", f"CorrFilter(|r|>={threshold}) -> {len(selected)}")
+        return msg

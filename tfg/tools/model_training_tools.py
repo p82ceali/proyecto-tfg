@@ -11,6 +11,8 @@ import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from crewai.tools import BaseTool
 
+from shared_context import CTX
+
 # --------------------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------------------
@@ -274,7 +276,9 @@ class ModelTrainingTool(BaseTool):
                 if k in {"problem_type", "model", "target"}:
                     continue
                 lines.append(f"- {k}: {v}")
-            return "".join(lines)
+            report = "\n".join(lines)  # usar saltos para legibilidad
+            CTX.add_decision("training", f"Trained {model_used} ({problem_type}) target={target_col}")
+            return report
 
         except Exception as e:
             return f"ModelTrainingTool failed: {type(e).__name__}: {e}"
