@@ -13,3 +13,5 @@ mlruns/
 *.csv
 .ipynb_checkpoints/
 .DS_Store
+# build artifacts
+build/
