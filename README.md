@@ -52,23 +52,12 @@ panel serve src/tfg_ml/interface/ui_panel.py --autoreload --show
 ```
 This will open a web interface where you can upload your `.csv` dataset and interact with the intelligent agents using natural language.
 
-### Command-Line Interface (CLI)
-
-The project also includes a command-line interface. You can run it with the following command:
-```bash
-tfg-ml
-```
-For more information on the available commands, use the `--help` flag:
-```bash
-tfg-ml --help
-```
-
 ## Project Structure
 
 -   `src/tfg_ml/`: Main source code for the project.
     -   `adapters/`: Tools and utilities used by the agents.
     -   `agents/`: Definitions of the CrewAI agents for each task.
-    -   `interface/`: User interface components (Panel UI and CLI).
+    -   `interface/`: User interface components (Panel UI).
     -   `pipelines/`: Core logic for the machine learning workflows.
     -   `context.py`: Shared context between agents.
 -   `data/`: Directory for datasets.
