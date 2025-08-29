@@ -1,17 +1,40 @@
-# feature_selection_agent_structured_tools.py
-from crewai import Agent, Task, LLM
-from tfg_ml.adapters.feature_selection_tools import (
-    SelectKBestTool, VarianceThresholdTool,
-    RFImportanceSelectTool, CorrelationFilterTool
-)
+# agents/feature_selection_agent_structured_tools.py
+"""
+Feature Selection agent using structured tools.
 
-from crewai import Agent, Task, LLM
+This module defines:
+- A lightweight LLM configuration (Gemini via CrewAI).
+- `build_agent()`: an Agent preloaded with feature-selection tools.
+- `build_task(agent)`: a Task instructing the agent to use structured parameters
+  and request clarification when inputs are underspecified.
 
-from dotenv import load_dotenv
+Environment:
+    Requires `GOOGLE_API_KEY` (e.g., via `.env`).
+
+Notes:
+    Tools declare structured parameters; the agent must pass arguments via each
+    tool's schema (avoid ad-hoc JSON strings).
+"""
+
+from __future__ import annotations
+
 import os
 
+from dotenv import load_dotenv
+from crewai import Agent, Task, LLM
 
+from tfg_ml.adapters.feature_selection_tools import (
+    SelectKBestTool,
+    VarianceThresholdTool,
+    RFImportanceSelectTool,
+    CorrelationFilterTool,
+)
+
+# Load environment variables (e.g., GOOGLE_API_KEY)
 load_dotenv()
+
+# Base LLM used by this agent
+# If supported by your CrewAI version, you may pass model kwargs such as temperature.
 llm = LLM(
     model="gemini/gemini-2.0-flash-lite",
     api_key=os.getenv("GOOGLE_API_KEY"),
@@ -20,6 +43,19 @@ llm = LLM(
 
 
 def build_agent() -> Agent:
+    """
+    Create the Feature Selection agent.
+
+    Behavior:
+        - Interprets the user's request.
+        - Invokes only the necessary tool for feature selection.
+        - Supplies parameters using each tool's structured schema.
+        - If a required parameter is missing (e.g., `target`, `k`), asks one
+          brief clarifying question and stops.
+
+    Returns:
+        Agent: Configured CrewAI Agent with feature-selection tools attached.
+    """
     return Agent(
         role="Feature Selection Agent",
         goal=(
@@ -43,6 +79,21 @@ def build_agent() -> Agent:
 
 
 def build_task(agent: Agent) -> Task:
+    """
+    Define the task prompt/instructions for the feature-selection agent.
+
+    The task injects recent chat context and the current user request, then
+    instructs the agent to:
+        - Use ONLY the necessary tool.
+        - Pass parameters via structured fields (not JSON strings).
+        - Ask exactly one short follow-up question if the request is underspecified.
+
+    Args:
+        agent: The agent that will execute this task.
+
+    Returns:
+        Task: Configured CrewAI Task with clear expected output.
+    """
     return Task(
         description=(
             "CONVERSATION CONTEXT (last turns):\n{chat_context}\n\n"
@@ -52,9 +103,7 @@ def build_task(agent: Agent) -> Task:
             "If the request is underspecified (e.g., missing target), ask one short follow-up question and stop."
         ),
         expected_output=(
-            "A concise answer that states: method applied, parameters used, and selected/removed features."
+            "A concise answer stating the method applied, parameters used, and the selected vs. removed features."
         ),
         agent=agent,
     )
-
-

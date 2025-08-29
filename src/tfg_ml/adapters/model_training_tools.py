@@ -1,5 +1,26 @@
 # tools/model_training_tool.py
+"""
+Model training tool (CrewAI BaseTool) for classical ML workflows.
+
+Capabilities
+-----------
+- Performs a train/test split (stratified for classification).
+- Trains one of several supported models (scikit-learn or XGBoost when available).
+- Computes key metrics (classification or regression).
+- Persists artifacts (serialized model + metrics JSON) to disk.
+- Logs a compact decision in the shared context (CTX) for traceability.
+
+Usage
+-----
+Attach a pandas DataFrame to the tool before invoking:
+    tool.dataset = df
+
+Provide structured inputs via `ModelTrainingInput`. If `target` is omitted,
+the last DataFrame column is used as a heuristic.
+"""
+
 from __future__ import annotations
+
 from enum import Enum
 from typing import Any, Dict, Optional, Type, Tuple
 
@@ -13,11 +34,18 @@ from crewai.tools import BaseTool
 
 from tfg_ml.context import CTX
 
+
 # --------------------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------------------
-
 def _get_df(tool: BaseTool) -> pd.DataFrame:
+    """
+    Retrieve the DataFrame attached to the tool.
+
+    Raises:
+        ValueError: If no dataset is attached.
+        TypeError: If `dataset` is not a pandas DataFrame.
+    """
     df = getattr(tool, "dataset", None)
     if df is None:
         raise ValueError("No dataset assigned to tool. Set `tool.dataset = your_dataframe` before running.")
@@ -27,6 +55,16 @@ def _get_df(tool: BaseTool) -> pd.DataFrame:
 
 
 def _get_features_target(df: pd.DataFrame, target: Optional[str]) -> Tuple[pd.DataFrame, pd.Series, str]:
+    """
+    Split a DataFrame into features (X) and target (y).
+
+    Args:
+        df: Source DataFrame.
+        target: Optional target column name. If None, uses the last column.
+
+    Returns:
+        (X, y, target_name)
+    """
     if target is None:
         # Heuristic: use the last column if not specified
         target = df.columns[-1]
@@ -38,11 +76,13 @@ def _get_features_target(df: pd.DataFrame, target: Optional[str]) -> Tuple[pd.Da
 
 
 def _safe_mkdir(path: str) -> str:
+    """Create a directory if it does not exist and return the path."""
     os.makedirs(path, exist_ok=True)
     return path
 
 
 def _dump_json(path: str, data: Dict[str, Any]) -> None:
+    """Persist a dictionary to JSON with UTF-8 and indentation."""
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
@@ -50,7 +90,6 @@ def _dump_json(path: str, data: Dict[str, Any]) -> None:
 # --------------------------------------------------------------------------------------
 # Tool: ModelTrainingTool
 # --------------------------------------------------------------------------------------
-
 SUPPORTED_MODELS = [
     "logistic_regression",
     "random_forest",
@@ -58,19 +97,31 @@ SUPPORTED_MODELS = [
     "svm",
     "linear_regression",
 ]
+
+
 class SupportedModels(str, Enum):
+    """Enumeration of supported model identifiers."""
     logistic_regression = "logistic_regression"
     random_forest = "random_forest"
     xgboost = "xgboost"
     svm = "svm"
     linear_regression = "linear_regression"
 
+
 class ModelTrainingInput(BaseModel):
+    """
+    Structured inputs for model training.
+
+    Notes:
+        - `problem_type` must be "classification" or "regression".
+        - If `target` is None, the last DataFrame column is used.
+        - `artifacts_dir` controls where the trained model and metrics JSON are written.
+    """
     problem_type: str = Field(..., description="Problem type: classification or regression.")
     target: Optional[str] = Field(None, description="Target column name. If None, the last DataFrame column is used.")
     model: SupportedModels = Field(
         SupportedModels.random_forest,
-        description=f"Model to train. Options: {SUPPORTED_MODELS}"
+        description=f"Model to train. Options: {SUPPORTED_MODELS}",
     )
     test_size: float = Field(0.2, ge=0.05, le=0.5, description="Proportion for the test split.")
     random_state: int = Field(42, description="Random seed.")
@@ -85,19 +136,36 @@ class ModelTrainingInput(BaseModel):
 
     @field_validator("penalty")
     @classmethod
-    def _normalize_penalty(cls, v):
+    def _normalize_penalty(cls, v: Optional[str]) -> Optional[str]:
+        """Normalize 'none' (string) to None for LogisticRegression compatibility."""
         return None if (v is None or str(v).lower() == "none") else v
 
 
 class ModelTrainingTool(BaseTool):
+    """
+    Train a model for either classification or regression.
+
+    Workflow:
+        1) Split data into train/test (stratify if classification).
+        2) Build model from the requested family (RandomForest, LogisticRegression, SVM,
+           LinearRegression, or XGBoost if available).
+        3) Fit the model and compute key metrics.
+        4) Persist artifacts (model .joblib + metrics .json) under `artifacts_dir`.
+
+    Returns:
+        A concise, human-readable report including model, problem, target, split, artifact paths,
+        and the computed metrics.
+
+    Side effects:
+        Writes files to `artifacts_dir`. Adds a decision entry to `CTX`.
+    """
     name: str = "model_training"
     description: str = (
         "Train a scikit-learn model (or xgboost, if available) for classification or regression. "
         "Performs train/test split, computes metrics, and persists artifacts (model + metrics)."
     )
     args_schema: Type[ModelTrainingInput] = ModelTrainingInput
-    # Will be injected externally
-    dataset: Type[pd.DataFrame] = None
+    dataset: Optional[pd.DataFrame] = None  # injected externally by the orchestrator/coordinator
 
     def _run(
         self,
@@ -118,8 +186,14 @@ class ModelTrainingTool(BaseTool):
         try:
             from sklearn.model_selection import train_test_split
             from sklearn.metrics import (
-                accuracy_score, f1_score, precision_score, recall_score, roc_auc_score,
-                mean_squared_error, r2_score, mean_absolute_error
+                accuracy_score,
+                f1_score,
+                precision_score,
+                recall_score,
+                roc_auc_score,
+                mean_squared_error,
+                r2_score,
+                mean_absolute_error,
             )
 
             df = _get_df(self)
@@ -127,7 +201,11 @@ class ModelTrainingTool(BaseTool):
 
             # Split
             X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=test_size, random_state=random_state, stratify=y if problem_type == "classification" else None
+                X,
+                y,
+                test_size=test_size,
+                random_state=random_state,
+                stratify=y if problem_type == "classification" else None,
             )
 
             # Model factory
@@ -276,10 +354,10 @@ class ModelTrainingTool(BaseTool):
                 if k in {"problem_type", "model", "target"}:
                     continue
                 lines.append(f"- {k}: {v}")
-            report = "\n".join(lines)  # usar saltos para legibilidad
+
+            report = "\n".join(lines)
             CTX.add_decision("training", f"Trained {model_used} ({problem_type}) target={target_col}")
             return report
 
         except Exception as e:
             return f"ModelTrainingTool failed: {type(e).__name__}: {e}"
-

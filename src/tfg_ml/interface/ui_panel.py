@@ -1,3 +1,20 @@
+"""
+Interactive Panel UI for conversational ML workflows.
+
+Features:
+    - CSV upload with delimiter sniffing and preview table.
+    - Chat-driven pipeline execution with thread-safe UI updates.
+    - Minimal KPIs (rows/columns, detected delimiter) and status/notifications.
+
+Environment:
+    Loads variables from `.env` (if present).
+    Expects project modules:
+        - tfg_ml.context.Context (as SharedContext)
+        - tfg_ml.pipelines.workflows.run_pipeline
+"""
+
+from __future__ import annotations
+
 import os
 import csv
 import time
@@ -8,37 +25,37 @@ import pandas as pd
 import panel as pn
 from dotenv import load_dotenv
 
-# ── Your existing modules ──────────────────────────────────────────────────────
-# Make sure they exist in your project
+# Project modules (must exist in your codebase)
 from tfg_ml.context import Context as SharedContext
-from tfg_ml.pipelines.workflows import ejecutar_interaccion
-# ──────────────────────────────────────────────────────────────────────────────
+from tfg_ml.pipelines.workflows import run_pipeline
 
-# Panel setup (enable notifications)
+# Panel setup
 pn.extension("tabulator", design="material", notifications=True)
 load_dotenv()
 
-# ───────────────────────────────────
-# Constants and state
-# ───────────────────────────────────
+# ---------------------------------------------------------------------
+# Constants & shared state
+# ---------------------------------------------------------------------
 FINAL_DATA_PATH = "data/dataset.csv"
 MAX_EXECUTION_TIME = 90  # seconds
 MAX_FILE_SIZE_MB = 50
-ACCEPTED_EXT = ".csv"  # if later you want parquet: ".csv,.parquet"
+ACCEPTED_EXT = ".csv"  # extend to ".csv,.parquet" if needed
 
 shared_context = SharedContext()
-_lock = threading.Lock()            # avoid concurrent pipeline runs
-_running_flag = False               # execution state
+_lock = threading.Lock()
+_running_flag = False
 _uploaded_file_path: Optional[str] = None
 _detected_delimiter: Optional[str] = None
 
-# ───────────────────────────────────
-# UI Utilities (thread-safe)
-# ───────────────────────────────────
-def _notify(kind: str, msg: str, duration: int = 3000):
+# ---------------------------------------------------------------------
+# UI helpers (thread-safe)
+# ---------------------------------------------------------------------
+def _notify(kind: str, msg: str, duration: int = 3000) -> None:
     """
-    Sends a notification safely from any thread.
-    If no notification area is available, falls back to chat or status_text.
+    Show a notification from any thread.
+
+    If Panel's notification area is unavailable, falls back to posting a chat
+    message or updating the status text.
     """
     def _do():
         notif = getattr(pn.state, "notifications", None)
@@ -52,14 +69,16 @@ def _notify(kind: str, msg: str, duration: int = 3000):
                     notif.info(msg, duration=duration)
                 return
             except Exception:
-                pass
-        # Fallbacks (if area does not exist or we are outside a session)
+                pass  # fall back below
+
+        # Fallbacks
         try:
             if "chat" in globals() and chat is not None:
                 chat.send(f"**{kind.upper()}**: {msg}", user="System")
                 return
         except Exception:
             pass
+
         try:
             if "status_text" in globals() and status_text is not None:
                 prefix = "✅" if kind == "success" else "❌" if kind == "error" else "ℹ️"
@@ -72,66 +91,95 @@ def _notify(kind: str, msg: str, duration: int = 3000):
     else:
         _do()
 
-def toast_success(msg: str):
+
+def toast_success(msg: str) -> None:
+    """Convenience wrapper for a success toast."""
     _notify("success", msg, duration=3000)
 
-def toast_error(msg: str):
+
+def toast_error(msg: str) -> None:
+    """Convenience wrapper for an error toast."""
     _notify("error", msg, duration=5000)
 
-def toast_info(msg: str):
+
+def toast_info(msg: str) -> None:
+    """Convenience wrapper for an info toast."""
     _notify("info", msg, duration=2500)
 
-def safe_send_to_chat(message, user="Assistant", respond=False):
-    """Safely sends to the chat from callbacks or threads."""
+
+def safe_send_to_chat(message, user: str = "Assistant", respond: bool = False) -> None:
+    """
+    Safely send a message to the chat from callbacks or threads.
+    """
     def _do():
         try:
             chat.send(message, user=user, respond=respond)
         except Exception:
             pass
+
     if pn.state.curdoc:
         pn.state.curdoc.add_next_tick_callback(_do)
     else:
         _do()
 
+
 def detect_delimiter_from_bytes(raw: bytes) -> str:
-    """Detects delimiter by reading a sample of bytes as text."""
+    """
+    Detect a CSV delimiter by sniffing a small byte sample.
+
+    Returns:
+        Detected delimiter or ',' as a fallback.
+    """
     sample = raw[:4096].decode("utf-8", errors="ignore")
     sniffer = csv.Sniffer()
     try:
         dialect = sniffer.sniff(sample)
         return dialect.delimiter
     except Exception:
-        return ","  # fallback
+        return ","
+
 
 def read_csv_safely(path: str, sep: str) -> pd.DataFrame:
-    """CSV reader with basic types and memory safe."""
+    """
+    Read CSV with sensible defaults that reduce memory overhead.
+    """
     return pd.read_csv(path, sep=sep, low_memory=False)
 
 
-def set_running(is_running: bool, msg: str = ""):
+def set_running(is_running: bool, msg: str = "") -> None:
+    """
+    Update spinner and status text in a thread-safe manner.
+    """
     global _running_flag
     _running_flag = is_running
+
     def _do():
         status.value = is_running
         if msg:
             status_text.object = msg
+
     if pn.state.curdoc:
         pn.state.curdoc.add_next_tick_callback(_do)
     else:
         _do()
 
-# ───────────────────────────────────
-# Widgets and components
-# ───────────────────────────────────
+# ---------------------------------------------------------------------
+# Widgets & components
+# ---------------------------------------------------------------------
 chat = pn.chat.ChatInterface(
-    callback=None,                 # assigned later
+    callback=None,                 # assigned below
     sizing_mode="stretch_both",
     show_avatar=True,
     show_timestamp=False,
     min_height=560,
 )
 
-file_input = pn.widgets.FileInput(accept=ACCEPTED_EXT, name="CSV File", sizing_mode="stretch_width")
+file_input = pn.widgets.FileInput(
+    accept=ACCEPTED_EXT,
+    name="CSV File",
+    sizing_mode="stretch_width",
+)
+
 btn_clear = pn.widgets.Button(name="Clear chat", button_type="warning", icon="trash-2")
 btn_reset = pn.widgets.Button(name="Reset session", button_type="primary", icon="rotate-ccw")
 btn_example = pn.widgets.Button(name="Example: 'Do an EDA'", button_type="default", icon="sparkles")
@@ -142,13 +190,24 @@ k_rows = pn.indicators.Number(name="Rows", value=0, format="{value:,}", title_si
 k_cols = pn.indicators.Number(name="Columns", value=0, format="{value:,}", title_size="12pt")
 k_delim_label = pn.pane.Markdown("", sizing_mode="stretch_width")
 
-tbl = pn.widgets.Tabulator(pd.DataFrame(), height=300, pagination="remote", page_size=20, sizing_mode="stretch_both")
+# Use min_height to avoid sizing-mode warnings with stretch_both
+tbl = pn.widgets.Tabulator(
+    pd.DataFrame(),
+    min_height=300,
+    pagination="remote",
+    page_size=20,
+    sizing_mode="stretch_both",
+)
 schema_md = pn.pane.Markdown("", sizing_mode="stretch_width")
 
-# ───────────────────────────────────
+# ---------------------------------------------------------------------
 # File upload
-# ───────────────────────────────────
-def on_file_upload(event):
+# ---------------------------------------------------------------------
+def on_file_upload(event) -> None:
+    """
+    Persist the uploaded CSV, detect delimiter, load a preview, and update KPIs.
+    Also stores the dataset path in SharedContext for downstream use.
+    """
     global _uploaded_file_path, _detected_delimiter
     if not file_input.value:
         return
@@ -162,12 +221,10 @@ def on_file_upload(event):
     _uploaded_file_path = FINAL_DATA_PATH
 
     try:
-        # Detect delimiter and save to disk
         _detected_delimiter = detect_delimiter_from_bytes(file_input.value)
         with open(_uploaded_file_path, "wb") as f:
             f.write(file_input.value)
 
-        # Read and show preview
         df = read_csv_safely(_uploaded_file_path, sep=_detected_delimiter)
         tbl.value = df
 
@@ -188,7 +245,7 @@ def on_file_upload(event):
         toast_success(f"File {file_input.filename} loaded successfully.")
         status_text.object = "📦 Dataset ready to work with."
 
-        # Persist in SharedContext if used in your pipeline
+        # Share the path with the pipeline context if used downstream
         try:
             shared_context.dataset_path = _uploaded_file_path
         except Exception:
@@ -199,18 +256,23 @@ def on_file_upload(event):
 
 file_input.param.watch(on_file_upload, "value")
 
-# ───────────────────────────────────
-# Pipeline execution via chat
-# ───────────────────────────────────
-def timeout_handler():
+# ---------------------------------------------------------------------
+# Chat-driven pipeline execution
+# ---------------------------------------------------------------------
+def timeout_handler() -> None:
+    """Notify when execution exceeds MAX_EXECUTION_TIME."""
     safe_send_to_chat(
         "⏱️ The process is taking longer than expected. Do you want to try another task or adjust the parameters?",
         user="Assistant",
         respond=False,
     )
 
-def run_interaction(message: str):
-    """Runs the interaction with lock, timeout and visual feedback (thread-safe)."""
+
+def run_interaction(message: str) -> None:
+    """
+    Execute the requested action through the pipeline in a background thread,
+    guarding against concurrent runs and providing visual feedback.
+    """
     global _uploaded_file_path
 
     if not _uploaded_file_path:
@@ -228,8 +290,7 @@ def run_interaction(message: str):
         t0 = time.time()
 
         try:
-            # Call your main function
-            result = ejecutar_interaccion(message)
+            result = run_pipeline(message)
             safe_send_to_chat(result, user="Assistant", respond=False)
 
             elapsed = time.time() - t0
@@ -245,22 +306,26 @@ def run_interaction(message: str):
             except Exception:
                 pass
 
-def on_chat_callback(contents: str, user: str, instance: pn.chat.ChatInterface):
-    # Run in a thread to avoid blocking the server
+
+def on_chat_callback(contents: str, user: str, instance: pn.chat.ChatInterface) -> None:
+    """Start the pipeline run in a thread to keep the UI responsive."""
     thread = threading.Thread(target=run_interaction, args=(contents,))
     thread.daemon = True
     thread.start()
 
 chat.callback = on_chat_callback
 
-# ───────────────────────────────────
+# ---------------------------------------------------------------------
 # Quick actions
-# ───────────────────────────────────
-def clear_chat(_):
+# ---------------------------------------------------------------------
+def clear_chat(_) -> None:
+    """Clear the chat feed."""
     chat.clear()
     safe_send_to_chat("🧹 Chat cleared.", user="Assistant", respond=False)
 
-def reset_session(_):
+
+def reset_session(_) -> None:
+    """Reset UI state and clear the uploaded dataset and preview."""
     global _uploaded_file_path, _detected_delimiter
     _uploaded_file_path = None
     _detected_delimiter = None
@@ -274,7 +339,9 @@ def reset_session(_):
     status_text.object = "🔁 Session reset. Upload a dataset to start."
     toast_info("Session reset.")
 
-def send_example(_):
+
+def send_example(_) -> None:
+    """Seed the chat with a simple EDA request."""
     prompt = "Perform an initial EDA of the dataset and show me the 10 columns with the most missing values."
     chat.send(prompt, user="User")
     on_chat_callback(prompt, "User", chat)
@@ -283,9 +350,9 @@ btn_clear.on_click(clear_chat)
 btn_reset.on_click(reset_session)
 btn_example.on_click(send_example)
 
-# ───────────────────────────────────
-# Modern layout with FastListTemplate
-# ───────────────────────────────────
+# ---------------------------------------------------------------------
+# Layout
+# ---------------------------------------------------------------------
 sidebar = pn.Column(
     pn.pane.Markdown("### 📂 Data"),
     pn.Card(pn.Column(file_input, sizing_mode="stretch_width"), title="Upload dataset", collapsed=False),
@@ -320,7 +387,7 @@ main = pn.Column(
 )
 
 template = pn.template.FastListTemplate(
-    title="Assistant ML — Multiagent",
+    title="Assistant ML — Multi-agent",
     header=[pn.pane.Markdown("Filtering, EDA and training guided by conversation")],
     theme_toggle=True,
     theme="dark",
@@ -330,22 +397,25 @@ template = pn.template.FastListTemplate(
     accent_base_color="#4F46E5",
 )
 
-# Welcome message
+# ---------------------------------------------------------------------
+# Welcome message & serve
+# ---------------------------------------------------------------------
 safe_send_to_chat(
     """# 🤖 Welcome to the Automated Machine Learning Assistant
-    This system helps you configure, train, and evaluate supervised learning pipelines  
-    automatically, guided by your natural language instructions.
 
-📂 Upload your dataset in CSV format.  
-🔍 Explore and analyze your data with the EDA agent.  
-🧹 Clean and preprocess features intelligently.  
-🎯 Select the most relevant features for your model.  
-📊 Perform sampling or train/test splits.  
-⚙️ Train and evaluate supervised models with clear performance metrics.
+This system helps you configure, train, and evaluate supervised learning pipelines
+guided by natural language instructions.
 
-All interactions are powered by a **multi-agent system**, ensuring that each pipeline step is executed optimally.
+1) Upload your dataset in CSV format.
+2) Explore and analyze your data with the EDA agent.
+3) Clean and preprocess features.
+4) Select relevant features.
+5) Perform sampling or train/test splits.
+6) Train and evaluate supervised models with clear metrics.
 
-✨ Start by uploading your dataset and simply asking, in natural language, what you want to do!
+All interactions are powered by a multi-agent system.
+
+✨ Start by uploading your dataset and asking, in natural language, what you want to do!
 """,
     user="Assistant",
     respond=False,
