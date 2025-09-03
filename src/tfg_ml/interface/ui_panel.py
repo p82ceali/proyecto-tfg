@@ -92,19 +92,7 @@ def _notify(kind: str, msg: str, duration: int = 3000) -> None:
         _do()
 
 
-def toast_success(msg: str) -> None:
-    """Convenience wrapper for a success toast."""
-    _notify("success", msg, duration=3000)
 
-
-def toast_error(msg: str) -> None:
-    """Convenience wrapper for an error toast."""
-    _notify("error", msg, duration=5000)
-
-
-def toast_info(msg: str) -> None:
-    """Convenience wrapper for an info toast."""
-    _notify("info", msg, duration=2500)
 
 
 def safe_send_to_chat(message, user: str = "Assistant", respond: bool = False) -> None:
@@ -213,10 +201,7 @@ def on_file_upload(event) -> None:
         return
 
     size_mb = len(file_input.value) / (1024 * 1024)
-    if size_mb > MAX_FILE_SIZE_MB:
-        toast_error(f"The file exceeds the maximum allowed size ({MAX_FILE_SIZE_MB} MB).")
-        return
-
+    
     os.makedirs("data", exist_ok=True)
     _uploaded_file_path = FINAL_DATA_PATH
 
@@ -242,7 +227,6 @@ def on_file_upload(event) -> None:
             user="Assistant",
             respond=False,
         )
-        toast_success(f"File {file_input.filename} loaded successfully.")
         status_text.object = "📦 Dataset ready to work with."
 
         # Share the path with the pipeline context if used downstream
@@ -251,7 +235,6 @@ def on_file_upload(event) -> None:
         except Exception:
             pass
     except Exception as e:
-        toast_error(f"Error reading file: {e}")
         safe_send_to_chat(f"❌ Could not read file: {e}", user="Assistant", respond=False)
 
 file_input.param.watch(on_file_upload, "value")
@@ -295,11 +278,9 @@ def run_interaction(message: str) -> None:
 
             elapsed = time.time() - t0
             set_running(False, f"✅ Action completed in {elapsed:0.1f}s")
-            toast_success("Action completed")
         except Exception as e:
             set_running(False, "❌ Error during pipeline execution")
             safe_send_to_chat(f"❌ General error: {e}", user="Assistant", respond=False)
-            toast_error(str(e))
         finally:
             try:
                 timer.cancel()
@@ -337,7 +318,6 @@ def reset_session(_) -> None:
     k_delim_label.object = ""
     chat.clear()
     status_text.object = "🔁 Session reset. Upload a dataset to start."
-    toast_info("Session reset.")
 
 
 def send_example(_) -> None:

@@ -72,6 +72,8 @@ def build_preprocessing_agent() -> Agent:
         tools=[DiscretizeFeatureTool(), OneHotEncodeFeatureTool()],
         verbose=True,
         llm=llm,
+        max_iter=3,
+        max_execution_time=30,
     )
 
 

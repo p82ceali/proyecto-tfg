@@ -66,6 +66,8 @@ def build_model_training_agent() -> Agent:
         tools=[ModelTrainingTool()],
         verbose=True,
         llm=llm,
+        max_iter=3,
+        max_execution_time=30,
     )
 
 

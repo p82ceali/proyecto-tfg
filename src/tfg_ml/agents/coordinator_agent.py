@@ -47,22 +47,10 @@ llm = LLM(
     model="gemini/gemini-2.0-flash-lite",
     api_key=os.getenv("GOOGLE_API_KEY"),
     custom_llm_provider="gemini",
-    # If supported by your CrewAI version, you may add:
     # temperature=0.2
 )
 
-# ---------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------
-def _attach_dataset_to_agent_tools(agent: Agent, df: pd.DataFrame) -> None:
-    """
-    Attach the same pandas DataFrame instance to each tool on the given agent.
-
-    Tools are expected to read `self.dataset` during execution.
-    """
-    for t in getattr(agent, "tools", []):
-        t.dataset = df
-
+dataset_path="data/dataset.csv"
 
 # ---------------------------------------------------------------------
 # Structured input shared by delegates
@@ -95,20 +83,15 @@ class DelegateToAnalysisTool(BaseTool):
         "Input must include {'user_request': <text>}."
     )
     args_schema: Type[BaseModel] = DelegateInput
-    dataset: Optional[pd.DataFrame] = None
+    #dataset: Optional[pd.DataFrame] = None
 
-    def _run(self, user_request: str, chat_context: str = "") -> str:
-        if not isinstance(self.dataset, pd.DataFrame):
-            return "No dataset attached to analysis delegate. Attach a DataFrame via tool.dataset = df."
-
+    def _run(self, user_request: str, chat_context: str = "", ) -> str:
+       
         sub_agent = analysis.build_agent()
-        # For production, replace prints with logging
-        print("\n", "*" * 30, "\n", "COORDINATOR: delegating to ANALYSIS", "\n", "*" * 30)
-        _attach_dataset_to_agent_tools(sub_agent, self.dataset)
         sub_task = analysis.build_task(sub_agent)
         sub_crew = Crew(agents=[sub_agent], tasks=[sub_task], verbose=False)
         result = sub_crew.kickoff(inputs={"user_request": user_request, "chat_context": chat_context})
-        return "🔀 Route: ANALYSIS\n" + str(result)
+        return str(result)
 
 
 class DelegateToPreprocessingTool(BaseTool):
@@ -122,16 +105,14 @@ class DelegateToPreprocessingTool(BaseTool):
         "Input must include {'user_request': <text>}."
     )
     args_schema: Type[BaseModel] = DelegateInput
-    dataset: Optional[pd.DataFrame] = None
-    autosave_path: Optional[str] = "pipeline_data/dataset.csv"
+    autosave_path: Optional[str] = "data/dataset.csv"
+    
 
     def _run(self, user_request: str, chat_context: str = "") -> str:
-        if not isinstance(self.dataset, pd.DataFrame):
-            return "No dataset attached to preprocessing delegate. Attach a DataFrame via tool.dataset = df."
-
+        dataset=pd.read_csv(dataset_path)
+        if not isinstance(dataset, pd.DataFrame):
+            return "No dataset found."
         sub_agent = preprocessing.build_preprocessing_agent()
-        print("\n", "*" * 30, "\n", "COORDINATOR: delegating to PREPROCESSING", "\n", "*" * 30)
-        _attach_dataset_to_agent_tools(sub_agent, self.dataset)
         sub_task = preprocessing.build_task(sub_agent)
         sub_crew = Crew(agents=[sub_agent], tasks=[sub_task], verbose=False)
         result = sub_crew.kickoff(inputs={"user_request": user_request, "chat_context": chat_context})
@@ -139,12 +120,12 @@ class DelegateToPreprocessingTool(BaseTool):
         if self.autosave_path:
             try:
                 os.makedirs(os.path.dirname(self.autosave_path), exist_ok=True)
-                self.dataset.to_csv(self.autosave_path, index=False)
-                result = str(result) + f"\n\n💾 Saved changes to {self.autosave_path}"
+                dataset.to_csv(self.autosave_path, index=False)
+                result = str(result)
             except Exception as se:
-                result = str(result) + f"\n\n⚠️ Failed to save dataset: {se}"
+                result = f"\n\n⚠️ Failed to save dataset: {se}"
 
-        return "🔀 Route: PREPROCESSING\n" + str(result)
+        return str(result)
 
 
 class DelegateToFeatureSelectionTool(BaseTool):
@@ -155,16 +136,12 @@ class DelegateToFeatureSelectionTool(BaseTool):
         "Input must include {'user_request': <text>}."
     )
     args_schema: Type[BaseModel] = DelegateInput
-    dataset: Optional[pd.DataFrame] = None
     autosave_path: Optional[str] = "pipeline_data/dataset.csv"
-
     def _run(self, user_request: str, chat_context: str = "") -> str:
-        if not isinstance(self.dataset, pd.DataFrame):
-            return "No dataset attached to feature-selection delegate. Attach a DataFrame via tool.dataset = df."
-
+        dataset=pd.read_csv(dataset_path)
+        if not isinstance(dataset, pd.DataFrame):
+            return "No dataset found."
         sub_agent = fsel.build_agent()
-        print("\n", "*" * 30, "\n", "COORDINATOR: delegating to FEATURE_SELECTION", "\n", "*" * 30)
-        _attach_dataset_to_agent_tools(sub_agent, self.dataset)
         sub_task = fsel.build_task(sub_agent)
         sub_crew = Crew(agents=[sub_agent], tasks=[sub_task], verbose=False)
         result = sub_crew.kickoff(inputs={"user_request": user_request, "chat_context": chat_context})
@@ -172,12 +149,12 @@ class DelegateToFeatureSelectionTool(BaseTool):
         if self.autosave_path:
             try:
                 os.makedirs(os.path.dirname(self.autosave_path), exist_ok=True)
-                self.dataset.to_csv(self.autosave_path, index=False)
-                result = str(result) + f"\n\n💾 Saved changes to {self.autosave_path}"
+                dataset.to_csv(self.autosave_path, index=False)
+                result = str(result) 
             except Exception as se:
-                result = str(result) + f"\n\n⚠️ Failed to save dataset: {se}"
+                result = f"\n\n⚠️ Failed to save dataset: {se}"
 
-        return "🔀 Route: FEATURE_SELECTION\n" + str(result)
+        return str(result)
 
 
 class DelegateToInstanceSelectionTool(BaseTool):
@@ -192,16 +169,14 @@ class DelegateToInstanceSelectionTool(BaseTool):
         "or dataset splits train/val/test, time-series split). Input must include {'user_request': <text>}."
     )
     args_schema: Type[BaseModel] = DelegateInput
-    dataset: Optional[pd.DataFrame] = None
-    autosave_path: Optional[str] = "pipeline_data/dataset.csv"
-
+    autosave_path: Optional[str] = "data/dataset.csv"
     def _run(self, user_request: str, chat_context: str = "") -> str:
-        if not isinstance(self.dataset, pd.DataFrame):
-            return "No dataset attached to instance-selection delegate. Attach a DataFrame via tool.dataset = df."
+        dataset=pd.read_csv(dataset_path)
+
+        if not isinstance(dataset, pd.DataFrame):
+            return "No dataset found."
 
         sub_agent = isel.build_agent()
-        print("\n", "*" * 30, "\n", "COORDINATOR: delegating to INSTANCE_SELECTION", "\n", "*" * 30)
-        _attach_dataset_to_agent_tools(sub_agent, self.dataset)
         sub_task = isel.build_task(sub_agent)
         sub_crew = Crew(agents=[sub_agent], tasks=[sub_task], verbose=False)
         result = sub_crew.kickoff(inputs={"user_request": user_request, "chat_context": chat_context})
@@ -209,12 +184,12 @@ class DelegateToInstanceSelectionTool(BaseTool):
         if self.autosave_path:
             try:
                 os.makedirs(os.path.dirname(self.autosave_path), exist_ok=True)
-                self.dataset.to_csv(self.autosave_path, index=False)
-                result = str(result) + f"\n\n💾 Saved working dataset to {self.autosave_path}"
+                dataset.to_csv(self.autosave_path, index=False)
+                result = str(result)
             except Exception as se:
-                result = str(result) + f"\n\n⚠️ Failed to save dataset: {se}"
+                result = f"\n\n⚠️ Failed to save dataset: {se}" 
 
-        return "🔀 Route: INSTANCE_SELECTION\n" + str(result)
+        return str(result)
 
 
 # ------------------------- Model Training delegate -------------------------
@@ -226,26 +201,20 @@ class DelegateToModelTrainingTool(BaseTool):
         "Input must include {'user_request': <text>}."
     )
     args_schema: Type[BaseModel] = DelegateInput
-    dataset: Optional[pd.DataFrame] = None
     artifacts_dir: Optional[str] = "pipeline_data/artifacts"
-
     def _run(self, user_request: str, chat_context: str = "") -> str:
-        if not isinstance(self.dataset, pd.DataFrame):
-            return "No dataset attached to model-training delegate. Attach a DataFrame via tool.dataset = df."
 
         sub_agent = mtrain.build_model_training_agent()
-        print("\n", "*" * 30, "\n", "COORDINATOR: delegating to MODEL_TRAINING", "\n", "*" * 30)
-        _attach_dataset_to_agent_tools(sub_agent, self.dataset)
         sub_task = mtrain.build_task(sub_agent)
         sub_crew = Crew(agents=[sub_agent], tasks=[sub_task], verbose=False)
         result = sub_crew.kickoff(inputs={"user_request": user_request, "chat_context": chat_context})
-        return "🔀 Route: MODEL_TRAINING\n" + str(result)
+        return str(result)
 
 
 # ---------------------------------------------------------------------
 # Coordinator agent + task
 # ---------------------------------------------------------------------
-def build_coordinator_agent(df: pd.DataFrame) -> Agent:
+def build_coordinator_agent() -> Agent:
     """
     Create the Coordinator and attach the dataset to all delegate tools.
 
@@ -262,12 +231,11 @@ def build_coordinator_agent(df: pd.DataFrame) -> Agent:
         DelegateToInstanceSelectionTool(),
         DelegateToModelTrainingTool(),  # included
     ]
-    for t in delegates:
-        t.dataset = df
 
     return Agent(
         role="Coordinator",
         goal=(
+            "Read the conversation context to know the recent interactions."
             "Read the user's request. If the message is SMALL TALK / OFF-TOPIC "
             "(e.g., greetings like 'hola/hello', thanks, casual chit-chat, jokes, meta-questions about the assistant, "
             "or any general non-ML request), reply directly using the LLM in the SAME language as the user — "
@@ -286,6 +254,8 @@ def build_coordinator_agent(df: pd.DataFrame) -> Agent:
         tools=delegates,
         verbose=True,
         llm=llm,
+        max_iter=3,
+        max_execution_time=30,
     )
 
 
@@ -298,7 +268,7 @@ def build_coordinator_task(agent: Agent) -> Task:
     """
     return Task(
         description=(
-            "CONVERSATION CONTEXT (last turns):\n{chat_context}\n\n"
+            "CONVERSATION CONTEXT:\n{chat_context}\n\n"
             "User request: {user_request}\n\n"
             "Decision policy:\n"
             "FIRST — If the message is SMALL TALK / OFF-TOPIC (e.g., greetings like 'hola', 'hello', 'buenas', "

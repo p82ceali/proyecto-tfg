@@ -34,25 +34,7 @@ from crewai.tools import BaseTool
 
 from tfg_ml.context import CTX
 
-
-# --------------------------------------------------------------------------------------
-# Helpers
-# --------------------------------------------------------------------------------------
-def _get_df(tool: BaseTool) -> pd.DataFrame:
-    """
-    Retrieve the DataFrame attached to the tool.
-
-    Raises:
-        ValueError: If no dataset is attached.
-        TypeError: If `dataset` is not a pandas DataFrame.
-    """
-    df = getattr(tool, "dataset", None)
-    if df is None:
-        raise ValueError("No dataset assigned to tool. Set `tool.dataset = your_dataframe` before running.")
-    if not isinstance(df, pd.DataFrame):
-        raise TypeError("`dataset` must be a pandas DataFrame.")
-    return df
-
+dataset_path="data/dataset.csv"
 
 def _get_features_target(df: pd.DataFrame, target: Optional[str]) -> Tuple[pd.DataFrame, pd.Series, str]:
     """
@@ -196,7 +178,8 @@ class ModelTrainingTool(BaseTool):
                 mean_absolute_error,
             )
 
-            df = _get_df(self)
+            df = pd.read_csv(dataset_path)
+
             X, y, target_col = _get_features_target(df, target)
 
             # Split
@@ -356,7 +339,6 @@ class ModelTrainingTool(BaseTool):
                 lines.append(f"- {k}: {v}")
 
             report = "\n".join(lines)
-            CTX.add_decision("training", f"Trained {model_used} ({problem_type}) target={target_col}")
             return report
 
         except Exception as e:

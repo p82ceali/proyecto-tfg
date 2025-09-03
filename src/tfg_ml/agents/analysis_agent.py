@@ -23,6 +23,7 @@ import os
 from dotenv import load_dotenv
 from crewai import Agent, Task, LLM
 
+
 # EDA tools (must provide structured parameters)
 from tfg_ml.adapters.analysis_tools import (
     DescribeFeatureTool,
@@ -38,6 +39,8 @@ llm = LLM(
     api_key=os.getenv("GOOGLE_API_KEY"),
     custom_llm_provider="gemini",
 )
+
+
 
 
 def build_agent() -> Agent:
@@ -68,6 +71,8 @@ def build_agent() -> Agent:
         tools=[DescribeFeatureTool(), ComputeStatisticTool()],
         verbose=True,
         llm=llm,
+        max_iter=3,
+        max_execution_time=30,
     )
 
 

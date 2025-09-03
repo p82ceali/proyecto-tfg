@@ -64,12 +64,11 @@ def run_pipeline(pregunta: str) -> str:
     Returns:
         str: Conversational Markdown answer produced by the Coordinator.
     """
-    # 1) Load active dataset
-    df = _load_active_dataset()
+    
 
     # 2) Build Coordinator and its task (attach dataset to delegate tools)
-    chat_context = CTX.summary_history(n=20)
-    coordinator = build_coordinator_agent(df)
+    chat_context = CTX.as_prompt()
+    coordinator = build_coordinator_agent()
     task = build_coordinator_task(coordinator)
 
     # 3) Run Crew with inputs
@@ -83,7 +82,7 @@ def run_pipeline(pregunta: str) -> str:
 
     # 4) Persist interaction in global context
     respuesta = str(result)
-    CTX.add_interaction(pregunta, respuesta)
+    CTX.add(pregunta, respuesta)
 
     # 5) Return formatted answer
     return respuesta

@@ -10,7 +10,8 @@ This module exposes:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from collections import deque
+from typing import Any, Deque, Dict, List, Optional
 import threading
 
 
@@ -25,61 +26,21 @@ class Context:
             - "decisions": list of dicts {"stage": str, "text": str, "meta": dict}
     """
 
-    def __init__(self) -> None:
+    def __init__(self, max_interactions: int = 8) -> None:
         self._lock = threading.RLock()
-        self.data: Dict[str, Any] = {
-            "history": [],        # type: List[Dict[str, str]]
-            "last_topic": None,    # type: Optional[str]
-            "decisions": [],       # type: List[Dict[str, Any]]
-        }
+        self.history: Deque[Dict[str, str]] = deque(maxlen=max_interactions)
 
-    # -----------------------------
-    # Mutators
-    # -----------------------------
-    def add_interaction(self, question: str, answer: str) -> None:
-        """Append a user–assistant interaction to the history."""
-        with self._lock:
-            self.data["history"].append({"question": question, "answer": answer})
+    def add(self, user: str, assistant: str) -> None:
+        self.history.append({"user": user, "assistant": assistant})
 
-    def add_decision(self, stage: str, text: str, meta: Optional[Dict[str, Any]] = None) -> None:
-        """Record a system decision (stage, description, optional metadata)."""
-        with self._lock:
-            self.data["decisions"].append({"stage": stage, "text": text, "meta": (meta or {})})
-
-    def set(self, key: str, value: Any) -> None:
-        """Set an arbitrary key in the context."""
-        with self._lock:
-            self.data[key] = value
-
-    # -----------------------------
-    # Accessors
-    # -----------------------------
-    def get(self, key: str, default: Any = None) -> Any:
-        """Get an arbitrary key from the context."""
-        with self._lock:
-            return self.data.get(key, default)
-
-    def summary_history(self, n: int = 20) -> str:
+    def as_prompt(self) -> str:
         """
-        Return a plain-text summary of the last `n` interactions, formatted for the coordinator.
+        Return a text block with the last interactions
         """
-        with self._lock:
-            history: List[Dict[str, str]] = self.data["history"][-max(0, n):]
-            lines = [
-                f"User: {h.get('question', '')}\nAnswer: {h.get('answer', '')}"
-                for h in history
-            ]
-        return "\n".join(lines)
+        lines: List[str] = []
+        for h in self.history:
+            lines.append(f"User: {h['user']}\nAssistant: {h['assistant']}")
+        return "\n\n".join(lines)
 
-    def summary(self, n: int = 10) -> str:
-        """
-        Return a compact one-line-per-decision summary of the last `n` decisions.
-        """
-        with self._lock:
-            decs: List[Dict[str, Any]] = self.data["decisions"][-max(0, n):]
-            lines = [f"- [{d.get('stage', '')}] {d.get('text', '')}" for d in decs]
-        return "\n".join(lines)
-
-
-# ✅ Global singleton shared across modules
-CTX = Context()
+# Global singleton shared across modules
+CTX = Context(max_interactions= 8)

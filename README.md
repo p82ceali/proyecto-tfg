@@ -11,8 +11,8 @@ This project is an automated prediction system based on intelligent agents, usin
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/your-username/tfg-ml.git
-    cd tfg-ml
+    git clone https://github.com/p82ceali/proyecto-tfg.git
+    cd proyecto-tfg
     ```
 
 2.  **Create and activate a virtual environment:**

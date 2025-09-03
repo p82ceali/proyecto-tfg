@@ -45,24 +45,8 @@ from crewai.tools import BaseTool
 
 from tfg_ml.context import CTX
 
+dataset_path="data/dataset.csv"
 
-# ---------------------------------------------------------------------
-# Helpers (reusable)
-# ---------------------------------------------------------------------
-def _get_df(tool: BaseTool) -> pd.DataFrame:
-    """
-    Retrieve the DataFrame attached to a tool.
-
-    Raises:
-        ValueError: If no dataset is attached.
-        TypeError: If `dataset` is not a pandas DataFrame.
-    """
-    df = getattr(tool, "dataset", None)
-    if df is None:
-        raise ValueError("No dataset assigned to tool. Set `tool.dataset = your_dataframe` before running.")
-    if not isinstance(df, pd.DataFrame):
-        raise TypeError("`dataset` must be a pandas DataFrame.")
-    return df
 
 
 def _numeric_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -102,12 +86,11 @@ class StratifiedSampleTool(BaseTool):
         "Args: target; Optional: sample_size, random_state. Saves to data/dataset.csv"
     )
     args_schema: Type[BaseModel] = StratifiedSampleInput
-    dataset: Optional[pd.DataFrame] = None
 
     def _run(self, target: str, sample_size: float = 0.5, random_state: Optional[int] = 42) -> str:
         from sklearn.model_selection import train_test_split
 
-        df = _get_df(self)
+        df = pd.read_csv(dataset_path)
         if target not in df.columns:
             return f"Target '{target}' not found. Available: {list(df.columns)}"
 
@@ -130,7 +113,6 @@ class StratifiedSampleTool(BaseTool):
         path = "data/dataset.csv"
         reduced_df.to_csv(path, index=False)
 
-        CTX.add_decision("instance_selection", f"Stratified sample target={target}, size={reduced_df.shape[0]}")
         return (
             "Stratified sampling applied.\n"
             f"Original size: {df.shape[0]} → Reduced size: {reduced_df.shape[0]}\n"
@@ -163,7 +145,7 @@ class RandomSampleTool(BaseTool):
     def _run(self, sample_size: float = 0.5, random_state: Optional[int] = 42) -> str:
         from sklearn.model_selection import train_test_split
 
-        df = _get_df(self)
+        df = pd.read_csv(dataset_path)
         idx = np.arange(len(df))
         train_idx, _ = train_test_split(idx, train_size=sample_size, random_state=random_state)
         reduced_df = df.iloc[train_idx].copy()
@@ -172,7 +154,6 @@ class RandomSampleTool(BaseTool):
         path = "data/dataset.csv"
         reduced_df.to_csv(path, index=False)
 
-        CTX.add_decision("instance_selection", f"Random sample size={reduced_df.shape[0]}")
         return (
             "Random sampling applied.\n"
             f"Original size: {df.shape[0]} → Reduced size: {reduced_df.shape[0]}\n"
@@ -201,7 +182,6 @@ class ClassBalancedSampleTool(BaseTool):
         "Build a class-balanced subset (per_class or max_total). Saves to data/dataset.csv"
     )
     args_schema: Type[BaseModel] = ClassBalancedSampleInput
-    dataset: Optional[pd.DataFrame] = None
 
     def _run(
         self,
@@ -212,7 +192,7 @@ class ClassBalancedSampleTool(BaseTool):
         shuffle_within_class: bool = True,
     ) -> str:
         rng = np.random.default_rng(random_state)
-        df = _get_df(self)
+        df = pd.read_csv(dataset_path)
 
         if target not in df.columns:
             return f"Target '{target}' not found. Available: {list(df.columns)}"
@@ -242,7 +222,6 @@ class ClassBalancedSampleTool(BaseTool):
         path = "data/dataset.csv"
         reduced_df.to_csv(path, index=False)
 
-        CTX.add_decision("instance_selection", f"Class-balanced per_class={per_class}")
         return (
             "Class-balanced sampling applied.\n"
             f"Per-class quota: {per_class}\n"
@@ -285,7 +264,7 @@ class ClusteredSampleTool(BaseTool):
         from sklearn.cluster import KMeans
         from sklearn.metrics import pairwise_distances_argmin_min
 
-        df = _get_df(self)
+        df = pd.read_csv(dataset_path)
         X = df if use_features is None else df[use_features]
         X_num = _numeric_df(X).to_numpy()
 
@@ -317,7 +296,6 @@ class ClusteredSampleTool(BaseTool):
         path = "data/dataset.csv"
         reduced_df.to_csv(path, index=False)
 
-        CTX.add_decision("instance_selection", f"KMeans n_clusters={n_clusters}, reps={samples_per_cluster}")
         return (
             "Clustered sampling applied (KMeans).\n"
             f"Clusters: {n_clusters}, representatives/cluster: {samples_per_cluster}.\n"
@@ -366,7 +344,7 @@ class TrainValTestSplitTool(BaseTool):
     ) -> str:
         from sklearn.model_selection import train_test_split
 
-        df = _get_df(self)
+        df = pd.read_csv(dataset_path)
 
         if target is not None and target not in df.columns:
             return f"Target '{target}' not found. Available: {list(df.columns)}"
@@ -417,10 +395,10 @@ class TimeSeriesSplitTool(BaseTool):
         "Saves to data/train.csv, val.csv, test.csv"
     )
     args_schema: Type[BaseModel] = TimeSeriesSplitInput
-    dataset: Optional[pd.DataFrame] = None
 
     def _run(self, time_column: str, test_size: float = 0.2, val_size: float = 0.1) -> str:
-        df = _get_df(self)
+        df = pd.read_csv(dataset_path)
+
 
         if time_column not in df.columns:
             return f"Time column '{time_column}' not found. Available: {list(df.columns)}"
@@ -446,7 +424,6 @@ class TimeSeriesSplitTool(BaseTool):
         val_df.to_csv(val_path, index=False)
         test_df.to_csv(test_path, index=False)
 
-        CTX.add_decision("splitting", f"TimeSeriesSplit col={time_column}, test={test_size}, val={val_size}")
         return (
             "Time-series split created (chronological).\n"
             f"Sizes → train: {train_df.shape[0]}, val: {val_df.shape[0]}, test: {test_df.shape[0]}\n"

@@ -75,6 +75,8 @@ def build_agent() -> Agent:
         ],
         verbose=True,
         llm=llm,
+        max_iter=3,
+        max_execution_time=30,
     )
 
 

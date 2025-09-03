@@ -26,21 +26,9 @@ from crewai.tools import BaseTool
 
 from tfg_ml.context import CTX
 
+dataset_path="data/dataset.csv"
 
-# ---------------------------------------------------------------------
-# Internals
-# ---------------------------------------------------------------------
-def _get_df(tool: BaseTool) -> pd.DataFrame:
-    """
-    Retrieve the DataFrame attached to a tool.
 
-    Raises:
-        ValueError: If no DataFrame is attached.
-    """
-    df = getattr(tool, "dataset", None)
-    if df is None or not isinstance(df, pd.DataFrame):
-        raise ValueError("No dataset assigned to tool. Set `tool.dataset = df` before running.")
-    return df
 
 
 def _safe_new_col_name(df: pd.DataFrame, base: str) -> str:
@@ -147,13 +135,13 @@ class DiscretizeFeatureTool(BaseTool):
     name: str = "discretize_feature"
     description: str = "Discretize a numeric column (cut/qcut or custom edges)."
     args_schema: Type[BaseModel] = DiscretizeFeatureInput
-    dataset: Optional[pd.DataFrame] = None  # set by the orchestrator/coordinator
 
     def _run(self, **kwargs) -> str:
         """
         Execute discretization according to validated `kwargs`.
         """
-        df = _get_df(self)
+        df = pd.read_csv(dataset_path)
+        
         column = kwargs["column"]
 
         if column not in df.columns:
@@ -187,7 +175,6 @@ class DiscretizeFeatureTool(BaseTool):
             df.drop(columns=[column], inplace=True)
 
         desc = df[new_column].describe().to_string()
-        CTX.add_decision("preprocessing", f"Discretize '{column}' -> '{new_column}'")
         return f"Created '{new_column}'.\n{desc}"
 
 
@@ -230,7 +217,6 @@ class OneHotEncodeFeatureTool(BaseTool):
     name: str = "one_hot_encode_feature"
     description: str = "One-hot encode a categorical column using pandas.get_dummies()."
     args_schema: Type[BaseModel] = OneHotEncodeInput
-    dataset: Optional[pd.DataFrame] = None  # set by the orchestrator/coordinator
 
     def _run(
         self,
@@ -240,7 +226,8 @@ class OneHotEncodeFeatureTool(BaseTool):
         dtype: Optional[str] = "uint8",
         drop_original: bool = True,
     ) -> str:
-        df = _get_df(self)
+        df = pd.read_csv(dataset_path)
+
 
         if column not in df.columns:
             return f"Column '{column}' not found. Available: {list(df.columns)}"
@@ -258,5 +245,4 @@ class OneHotEncodeFeatureTool(BaseTool):
         if drop_original:
             df.drop(columns=[column], inplace=True)
 
-        CTX.add_decision("preprocessing", f"OneHot '{column}' -> {len(new_cols)} columnas")
         return "One-hot encoding created columns:\n" + ", ".join(new_cols) + "\n\n" + _bool_col_summary(df, new_cols)

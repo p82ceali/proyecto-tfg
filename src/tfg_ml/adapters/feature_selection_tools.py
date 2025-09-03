@@ -31,21 +31,7 @@ from crewai.tools import BaseTool
 
 from tfg_ml.context import CTX
 
-
-# ---------------------------------------------------------------------
-# Internals
-# ---------------------------------------------------------------------
-def _get_df(tool: BaseTool) -> pd.DataFrame:
-    """
-    Retrieve the DataFrame attached to a tool.
-
-    Raises:
-        ValueError: If no DataFrame has been attached.
-    """
-    df = getattr(tool, "dataset", None)
-    if df is None or not isinstance(df, pd.DataFrame):
-        raise ValueError("No dataset assigned to tool. Set `tool.dataset = df`.")
-    return df
+path="data/dataset.csv"
 
 
 # ---------------------------------------------------------------------
@@ -78,10 +64,9 @@ class SelectKBestTool(BaseTool):
     name: str = "select_kbest"
     description: str = "Select top-k features by a sklearn score function."
     args_schema: Type[BaseModel] = SelectKBestInput
-    dataset: Optional[pd.DataFrame] = None  # set by the orchestrator/coordinator
 
     def _run(self, target: str, k: int, scoring: str) -> str:
-        df = _get_df(self)
+        df = pd.read_csv(path)
 
         if target not in df.columns:
             return f"Target '{target}' not found. Available: {list(df.columns)}"
@@ -127,7 +112,6 @@ class SelectKBestTool(BaseTool):
             lines.append(f"Removed: {removed}")
 
         out = "\n".join(lines)
-        CTX.add_decision("feature_selection", f"SelectKBest({scoring}, k={k}) -> {selected}")
         return out
 
 
@@ -149,12 +133,12 @@ class VarianceThresholdTool(BaseTool):
     name: str = "variance_threshold"
     description: str = "Filter numeric features by variance threshold."
     args_schema: Type[BaseModel] = VarianceThresholdInput
-    dataset: Optional[pd.DataFrame] = None  # set by the orchestrator/coordinator
 
     def _run(self, threshold: float = 0.0) -> str:
         from sklearn.feature_selection import VarianceThreshold
 
-        df = _get_df(self)
+        df = pd.read_csv(path)
+        
         X_num = df.select_dtypes(include=[np.number])
         if X_num.shape[1] == 0:
             return "No numeric columns to filter."
@@ -168,7 +152,6 @@ class VarianceThresholdTool(BaseTool):
             f"Selected: {selected}\n"
             f"Removed: {removed}"
         )
-        CTX.add_decision("feature_selection", f"VarianceThreshold(th={threshold}) -> {len(selected)} keep")
         return msg
 
 
@@ -194,7 +177,6 @@ class RFImportanceSelectTool(BaseTool):
     name: str = "rf_importance_select"
     description: str = "Rank features by RandomForest importance; classification or regression heuristic."
     args_schema: Type[BaseModel] = RFImportanceInput
-    dataset: Optional[pd.DataFrame] = None  # set by the orchestrator/coordinator
 
     def _run(
         self,
@@ -203,7 +185,8 @@ class RFImportanceSelectTool(BaseTool):
         max_depth: Optional[int] = None,
         top: Optional[int] = None,
     ) -> str:
-        df = _get_df(self)
+        df = pd.read_csv(path)
+
 
         if target not in df.columns:
             return f"Target '{target}' not found. Available: {list(df.columns)}"
@@ -252,7 +235,6 @@ class RFImportanceSelectTool(BaseTool):
             lines.append(f"Ignored non-numeric columns: {dropped}")
 
         out = "\n".join(lines)
-        CTX.add_decision("feature_selection", f"RF rank top={top or len(ranked)}")
         return out
 
 
@@ -273,10 +255,10 @@ class CorrelationFilterTool(BaseTool):
     name: str = "correlation_filter"
     description: str = "Select numeric features with |corr| >= threshold vs numeric target."
     args_schema: Type[BaseModel] = CorrelationFilterInput
-    dataset: Optional[pd.DataFrame] = None  # set by the orchestrator/coordinator
 
     def _run(self, target: str, threshold: float = 0.1) -> str:
-        df = _get_df(self)
+        df = pd.read_csv(path)
+
 
         if target not in df.columns:
             return f"Target '{target}' not found. Available: {list(df.columns)}"
@@ -300,5 +282,4 @@ class CorrelationFilterTool(BaseTool):
             f"Selected: {selected}\n"
             f"Removed: {removed}"
         )
-        CTX.add_decision("feature_selection", f"CorrFilter(|r|>={threshold}) -> {len(selected)}")
         return msg

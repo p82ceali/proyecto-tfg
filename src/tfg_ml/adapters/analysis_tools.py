@@ -30,21 +30,7 @@ from crewai.tools import BaseTool
 
 from tfg_ml.context import CTX
 
-
-# ---------------------------------------------------------------------
-# Internals
-# ---------------------------------------------------------------------
-def _get_df(tool: BaseTool) -> pd.DataFrame:
-    """
-    Retrieve the DataFrame attached to a tool.
-
-    Raises:
-        ValueError: If the tool has no DataFrame attached or it's not a DataFrame.
-    """
-    df = getattr(tool, "dataset", None)
-    if df is None or not isinstance(df, pd.DataFrame):
-        raise ValueError("No dataset assigned to tool. Set `tool.dataset = df` before running.")
-    return df
+path="data/dataset.csv"
 
 
 # ---------------------------------------------------------------------
@@ -61,6 +47,7 @@ class DescribeFeatureInput(BaseModel):
         None,
         description="Included dtypes for DataFrame.describe(); ignored for Series.",
     )
+    
 
 
 class DescribeFeatureTool(BaseTool):
@@ -76,7 +63,6 @@ class DescribeFeatureTool(BaseTool):
     name: str = "describe_feature"
     description: str = "Describe a specific column using pandas describe()."
     args_schema: Type[BaseModel] = DescribeFeatureInput
-    dataset: Optional[pd.DataFrame] = None  # set by the orchestrator/coordinator
 
     def _run(
         self,
@@ -84,7 +70,7 @@ class DescribeFeatureTool(BaseTool):
         percentiles: Optional[List[float]] = None,
         include: Optional[Union[str, List[str]]] = None,  # note: ignored for Series
     ) -> str:
-        df = _get_df(self)
+        df = pd.read_csv(path)
         if column not in df.columns:
             return f"Column '{column}' not found. Available: {list(df.columns)}"
 
@@ -99,7 +85,6 @@ class DescribeFeatureTool(BaseTool):
             lines += ["", "Top 10 values (including NaN):", vc.to_string()]
 
         out = "\n".join(lines)
-        CTX.add_decision("analysis", f"describe({column}) ejecutado")
         return out
 
 
@@ -133,7 +118,6 @@ class ComputeStatisticTool(BaseTool):
     name: str = "compute_statistic"
     description: str = "Compute a statistic over a column, optionally grouped."
     args_schema: Type[BaseModel] = ComputeStatisticInput
-    dataset: Optional[pd.DataFrame] = None  # set by the orchestrator/coordinator
 
     def _run(
         self,
@@ -142,7 +126,7 @@ class ComputeStatisticTool(BaseTool):
         dropna: bool = True,
         groupby: Optional[str] = None,
     ) -> str:
-        df = _get_df(self)
+        df = pd.read_csv(path)
 
         if column not in df.columns:
             return f"Column '{column}' not found. Available: {list(df.columns)}"
@@ -192,10 +176,8 @@ class ComputeStatisticTool(BaseTool):
             parts = [f"Per-group {stat} for '{column}' grouped by '{groupby}':"]
             for g, sub in df.groupby(groupby, dropna=False):
                 parts.append(f"{groupby}={g!r}: {stat}({column}) = {compute_on_series(sub[column])}")
-            CTX.add_decision("analysis", f"stat {stat} sobre {column} por {groupby}")
             return "\n".join(parts)
 
         # Ungrouped computation
         result_str = f"{stat}({column}) = {compute_on_series(df[column])}"
-        CTX.add_decision("analysis", f"stat {stat} sobre {column}")
         return result_str
