@@ -7,19 +7,23 @@ Exposed tools:
         Discretizes a numeric column using equal-width bins, equal-frequency bins,
         or custom edges; optionally replaces the original column.
     • OneHotEncodeFeatureTool
-        One-hot encodes a categorical column using `pandas.get_dummies()`.
+        One-hot encodes a categorical column or all categorical columns using `pandas.get_dummies()`.
+    • NullCleanerColumnTool
+        Cleans NaNs in a single column by dropping rows or imputing values.
+    • DropColumnTool
+        Drops one or more columns from the dataset.
 
 Usage requirements:
-    - Attach a pandas DataFrame before running:
-        tool.dataset = df
+    
     - Inputs are validated with Pydantic; tools return concise, human-readable text.
-    - Decisions are logged via `CTX.add_decision(...)` for traceability.
-"""
+    - Each tool reads from and writes to a CSV dataset at `dataset_path`.
+    - Side effects (if any) are documented per tool."""
 
 from __future__ import annotations
 
 from typing import List, Optional, Type, Literal
 
+import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from crewai.tools import BaseTool
@@ -100,7 +104,7 @@ class DiscretizeFeatureInput(BaseModel):
     include_lowest: bool = True
     drop_original: bool = True
     new_column: Optional[str] = None
-
+    if_exists: Literal["reuse", "overwrite", "suffix", "fail"] = "reuse" 
     @field_validator("bins")
     @classmethod
     def _check_bins(cls, v, info):
@@ -130,7 +134,6 @@ class DiscretizeFeatureTool(BaseTool):
 
     Side effects:
         - Adds the new (categorical) binned column.
-        - Optionally drops the original numeric column.
     """
     name: str = "discretize_feature"
     description: str = "Discretize a numeric column (cut/qcut or custom edges)."
@@ -144,8 +147,7 @@ class DiscretizeFeatureTool(BaseTool):
         
         column = kwargs["column"]
 
-        if column not in df.columns:
-            return f"Column '{column}' not found. Available: {list(df.columns)}"
+        
 
         series = df[column]
         if not pd.api.types.is_numeric_dtype(series):
@@ -155,8 +157,8 @@ class DiscretizeFeatureTool(BaseTool):
         labels = kwargs.get("labels")
         right = kwargs.get("right", True)
         include_lowest = kwargs.get("include_lowest", True)
-        drop_original = kwargs.get("drop_original", True)
         new_column = kwargs.get("new_column") or f"{column}_binned"
+        if_exists = kwargs.get("if_exists", "reuse")
 
         if strategy == "equal_width":
             cut = pd.cut(series, bins=kwargs["bins"], labels=labels, right=right, include_lowest=include_lowest)
@@ -168,13 +170,25 @@ class DiscretizeFeatureTool(BaseTool):
             cut = pd.cut(series, bins=kwargs["edges"], labels=labels, right=right, include_lowest=include_lowest)
 
         if new_column in df.columns:
-            new_column = _safe_new_col_name(df, new_column)
-
-        df[new_column] = cut
-        if drop_original:
-            df.drop(columns=[column], inplace=True)
-
+            if if_exists == "reuse":
+                desc = df[new_column].describe().to_string()
+                return f"'{new_column}' already exists. Reusing.\n{desc}"
+            elif if_exists == "overwrite":
+                df[new_column] = cut
+            elif if_exists == "suffix":
+                new_column = _safe_new_col_name(df, new_column)
+                df[new_column] = cut
+            elif if_exists == "fail":
+                return (f"Column '{new_column}' already exists. "
+                        f"Use if_exists='overwrite' or 'suffix' to proceed.")
+        else:
+            df[new_column] = cut
+        
+        
+        
+        df.to_csv(dataset_path, index=False)
         desc = df[new_column].describe().to_string()
+        
         return f"Created '{new_column}'.\n{desc}"
 
 
@@ -183,66 +197,269 @@ class DiscretizeFeatureTool(BaseTool):
 # ---------------------------------------------------------------------
 class OneHotEncodeInput(BaseModel):
     """
-    Structured inputs for OneHotEncodeFeatureTool.
+    Inputs for OneHotEncodeFeatureTool.
 
-    Parameters
-    ----------
-    column : str
-        Categorical column to one-hot encode.
-    prefix : str | None
-        Prefix for new dummy columns (defaults to source column name).
-    drop_first : bool
-        If True, drop the first level to avoid multicollinearity.
-    dtype : str | None
-        Dtype for the dummy columns (e.g., 'uint8').
-    drop_original : bool
-        If True, drop the original categorical column.
+    You can specify exactly ONE of:
+      - column: a single column
+      - columns: a list of columns
+      - all_categoricals=True: auto-detect all object/category columns
     """
-    column: str
-    prefix: Optional[str] = None
-    drop_first: bool = True
+    # modos de selección
+    column: Optional[str] = None
+    columns: Optional[List[str]] = None
+    all_categoricals: bool = False
+
+    # opciones de codificación
+    prefix: Optional[str] = None              # si no se indica, usa el nombre de cada columna
+    drop_first: bool = False                  # deja todas las categorías por defecto
     dtype: Optional[str] = "uint8"
-    drop_original: bool = True
+    if_exists: Literal["reuse", "overwrite", "suffix", "fail"] = "reuse"
 
 
 class OneHotEncodeFeatureTool(BaseTool):
     """
-    One-hot encode a categorical column using `pandas.get_dummies()`.
+    One-hot encode one, many or all categorical columns using pandas.get_dummies().
 
     Side effects:
-        - Adds the generated dummy columns (with collision-safe names).
-        - Optionally drops the original column.
-        - Returns a compact boolean/dummy summary for the new columns.
+      - Adds/updates dummy columns.
+      - Saves to dataset_path.
+      - Returns an exact, human-readable summary of changes.
     """
     name: str = "one_hot_encode_feature"
-    description: str = "One-hot encode a categorical column using pandas.get_dummies()."
+    description: str = "One-hot encode one, many, or all categorical columns."
     args_schema: Type[BaseModel] = OneHotEncodeInput
 
     def _run(
         self,
-        column: str,
+        column: Optional[str] = None,
+        columns: Optional[List[str]] = None,
+        all_categoricals: bool = False,
         prefix: Optional[str] = None,
-        drop_first: bool = True,
+        drop_first: bool = False,
         dtype: Optional[str] = "uint8",
-        drop_original: bool = True,
+        if_exists: str = "reuse",
     ) -> str:
         df = pd.read_csv(dataset_path)
 
+        selected: List[str] = []
 
+        if all_categoricals:
+            selected = df.select_dtypes(include=["object", "category"]).columns.tolist()
+        elif columns is not None:
+            selected = [c for c in columns]
+        elif column is not None:
+            selected = [column]
+        else:
+            return (
+                "Please specify one of: 'column', 'columns', or set 'all_categoricals=True'."
+            )
+
+        missing = [c for c in selected if c not in df.columns]
+        selected = [c for c in selected if c in df.columns]
+        if not selected:
+            return f"No valid columns to encode. Missing: {missing}" if missing else "No columns provided."
+
+        created_global: List[str] = []
+        overwritten_global: List[str] = []
+        reused_global: List[str] = []
+        per_col_created: dict = {}
+        per_col_overwritten: dict = {}
+        per_col_reused: dict = {}
+
+        for col in selected:
+            pref = (prefix or col)
+
+            # generar dummies de esa columna
+            dummies = pd.get_dummies(df[col], prefix=pref, drop_first=drop_first, dtype=dtype)
+            dummy_cols = list(dummies.columns)
+
+            created: List[str] = []
+            overwritten: List[str] = []
+            reused: List[str] = []
+
+            for c in dummy_cols:
+                if c in df.columns:
+                    if if_exists == "reuse":
+                        reused.append(c)  # no tocar
+                    elif if_exists == "overwrite":
+                        df[c] = dummies[c]
+                        overwritten.append(c)
+                    elif if_exists == "suffix":
+                        new_c = _safe_new_col_name(df, c)
+                        df[new_c] = dummies[c]
+                        created.append(new_c)
+                    elif if_exists == "fail":
+                        return (f"Column '{c}' already exists. "
+                                f"Use if_exists='overwrite' or 'suffix' to proceed.")
+                else:
+                    df[c] = dummies[c]
+                    created.append(c)
+
+            # acumular
+            created_global.extend(created)
+            overwritten_global.extend(overwritten)
+            reused_global.extend(reused)
+            if created:    per_col_created[col] = created
+            if overwritten: per_col_overwritten[col] = overwritten
+            if reused:     per_col_reused[col] = reused
+
+        df.to_csv(dataset_path, index=False)
+
+        parts: List[str] = []
+        parts.append("[one_hot_encode_feature]")
+        parts.append(f"Status: success")
+        parts.append(f"Columns encoded: {', '.join(selected)}")
+        if missing:
+            parts.append(f"Missing (skipped): {', '.join(missing)}")
+        parts.append(f"Options → drop_first={drop_first}, dtype={dtype}, if_exists={if_exists}, prefix={'<per-column>' if prefix is None else prefix}")
+
+        if created_global:
+            parts.append("Created: " + ", ".join(created_global))
+        if overwritten_global:
+            parts.append("Overwritten: " + ", ".join(overwritten_global))
+        if reused_global:
+            parts.append("Reused (kept existing): " + ", ".join(reused_global))
+        if not (created_global or overwritten_global or reused_global):
+            parts.append("No changes.")
+
+        if per_col_created:
+            for k, v in per_col_created.items():
+                parts.append(f"Created for '{k}': " + ", ".join(v))
+        if per_col_overwritten:
+            for k, v in per_col_overwritten.items():
+                parts.append(f"Overwritten for '{k}': " + ", ".join(v))
+        if per_col_reused:
+            for k, v in per_col_reused.items():
+                parts.append(f"Reused for '{k}': " + ", ".join(v))
+
+        return "\n".join(parts)
+
+class NullCleanerColumnInput(BaseModel):
+    """
+    Clean NaN values in a single column.
+
+    Parameters
+    ----------
+    column : str
+        Column name to clean.
+    mode : {'drop_rows','impute'}
+        - 'drop_rows': drop rows with NaN in this column.
+        - 'impute': fill NaNs with a value depending on the strategy.
+    numeric_strategy : {'median','mean','zero'}
+        Strategy for imputing numeric columns (only if mode='impute').
+    categorical_strategy : {'most_frequent','constant'}
+        Strategy for imputing categorical columns (only if mode='impute').
+    constant_value : str
+        Value to use when categorical_strategy='constant'.
+    persist : bool
+        If True, save the cleaned dataset back to dataset_path.
+    """
+    column: str
+    mode: Literal["drop_rows", "impute"] = "impute"
+    numeric_strategy: Literal["median", "mean", "zero"] = "median"
+    categorical_strategy: Literal["most_frequent", "constant"] = "most_frequent"
+    constant_value: str = "Unknown"
+
+
+class NullCleanerColumnTool(BaseTool):
+    """
+    Clean NaNs in a single column (drop rows or impute).
+    """
+    name: str = "null_cleaner_column"
+    description: str = "Clean NaNs in a single column (drop rows or impute)."
+    args_schema: Type[BaseModel] = NullCleanerColumnInput
+
+    def _run(
+        self,
+        column: str,
+        mode: str = "impute",
+        numeric_strategy: str = "median",
+        categorical_strategy: str = "most_frequent",
+        constant_value: str = "Unknown",
+    ) -> str:
+
+        df = pd.read_csv(dataset_path)
         if column not in df.columns:
             return f"Column '{column}' not found. Available: {list(df.columns)}"
 
-        pref = prefix or column
-        dummies = pd.get_dummies(df[column], prefix=pref, drop_first=drop_first, dtype=dtype)
+        n_rows_before = len(df)
+        na_before = int(df[column].isna().sum())
 
-        # Ensure no name collisions with existing columns
-        new_cols: List[str] = []
-        for c in dummies.columns:
-            new_cols.append(c if c not in df.columns else _safe_new_col_name(df, c))
-        dummies.columns = new_cols
+        if mode == "drop_rows":
+            df = df.dropna(subset=[column])
+            action_desc = f"Dropped {na_before} rows with NaN in column '{column}'."
 
-        df[new_cols] = dummies
-        if drop_original:
-            df.drop(columns=[column], inplace=True)
+        elif mode == "impute":
+            if pd.api.types.is_numeric_dtype(df[column]):
+                if numeric_strategy == "median":
+                    fill_val = df[column].median()
+                elif numeric_strategy == "mean":
+                    fill_val = df[column].mean()
+                else:  # zero
+                    fill_val = 0
+                df[column] = df[column].fillna(fill_val)
+                action_desc = f"Imputed NaN in '{column}' with {numeric_strategy} ({fill_val})."
 
-        return "One-hot encoding created columns:\n" + ", ".join(new_cols) + "\n\n" + _bool_col_summary(df, new_cols)
+            else:  # categorical
+                if categorical_strategy == "most_frequent":
+                    mode_val = df[column].mode(dropna=True)
+                    fill_val = mode_val.iloc[0] if not mode_val.empty else constant_value
+                else:  # constant
+                    fill_val = constant_value
+                df[column] = df[column].fillna(fill_val)
+                action_desc = f"Imputed NaN in '{column}' with {categorical_strategy} ('{fill_val}')."
+        else:
+            return "Invalid mode. Use 'drop_rows' or 'impute'."
+
+        n_rows_after = len(df)
+        na_after = int(df[column].isna().sum())
+
+        
+        df.to_csv(dataset_path, index=False)
+
+        return "\n".join([
+            f"NullCleanerColumn(mode={mode}, column={column})",
+            action_desc,
+            f"Rows: {n_rows_before} -> {n_rows_after}",
+            f"NaNs in '{column}': {na_before} -> {na_after}",
+            f"Saved to: {dataset_path}",
+        ])
+    
+
+class DropColumnInput(BaseModel):
+    """
+    Drop one or more columns from the dataset.
+
+    Parameters
+    ----------
+    columns : List[str]
+        List of column names to drop.
+    """
+    columns: List[str]
+
+
+class DropColumnTool(BaseTool):
+    """
+    Drop one or more columns from the dataset.
+    Changes are always persisted to dataset_path.
+    """
+    name: str = "drop_column"
+    description: str = "Remove one or more columns from the dataset."
+    args_schema: type = DropColumnInput
+
+    def _run(self, columns: List[str]) -> str:
+        df = pd.read_csv(dataset_path)
+        
+
+        n_rows, n_cols_before = df.shape
+        df = df.drop(columns=columns, errors="ignore")
+        n_rows_after, n_cols_after = df.shape
+
+        df.to_csv(dataset_path, index=False)
+
+        return "\n".join([
+            f"Dropped columns: {columns}",
+            f"Shape: {n_rows}x{n_cols_before} -> {n_rows_after}x{n_cols_after}",
+            f"Saved to: {dataset_path}",
+        ])
+    

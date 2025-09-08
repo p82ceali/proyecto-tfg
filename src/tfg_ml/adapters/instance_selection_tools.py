@@ -3,7 +3,6 @@
 Instance selection & dataset splitting tools (CrewAI BaseTool implementations).
 
 This module provides sampling and splitting utilities that operate on a pandas
-DataFrame attached to each tool instance via `tool.dataset`.
 
 Tools (sampling):
     • StratifiedSampleTool
@@ -22,8 +21,6 @@ Tools (splits):
         Chronological train/val/test split (no leakage) by time column.
 
 Usage requirements:
-    - A pandas DataFrame **must** be attached prior to execution:
-        tool.dataset = df
     - Inputs are Pydantic-validated; tools return concise, human-readable text.
     - Side effects:
         Sampling tools typically persist the reduced dataset to `data/dataset.csv`.
@@ -367,7 +364,6 @@ class TrainValTestSplitTool(BaseTool):
         val_df.to_csv(val_path, index=False)
         test_df.to_csv(test_path, index=False)
 
-        CTX.add_decision("splitting", f"Train/Val/Test split test={test_size}, val={val_size}")
         return (
             "Train/Val/Test split created.\n"
             f"Sizes → train: {train_df.shape[0]}, val: {val_df.shape[0]}, test: {test_df.shape[0]}\n"

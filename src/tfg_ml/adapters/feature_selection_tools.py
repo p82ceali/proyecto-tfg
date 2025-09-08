@@ -14,10 +14,7 @@ Exposed tools:
         target is above a threshold.
 
 Usage requirements:
-    - A pandas DataFrame must be attached before running:
-        tool.dataset = df
     - Each tool receives structured Pydantic inputs (no ad-hoc JSON strings).
-    - Decisions are logged via `CTX.add_decision(...)` for traceability.
 """
 
 from __future__ import annotations
@@ -110,7 +107,9 @@ class SelectKBestTool(BaseTool):
             lines.append(f"Ignored non-numeric columns: {dropped}")
         if removed:
             lines.append(f"Removed: {removed}")
-
+        
+        df_reduced = df[[c for c in [target] + selected if c in df.columns]]
+        df_reduced.to_csv(path, index=False)
         out = "\n".join(lines)
         return out
 
@@ -146,7 +145,8 @@ class VarianceThresholdTool(BaseTool):
         vt = VarianceThreshold(threshold=threshold).fit(X_num)
         selected = list(X_num.columns[vt.get_support()])
         removed = [c for c in X_num.columns if c not in selected]
-
+        df_reduced = df[selected]
+        df_reduced.to_csv(path, index=False)
         msg = (
             f"VarianceThreshold(threshold={threshold})\n"
             f"Selected: {selected}\n"
@@ -233,7 +233,10 @@ class RFImportanceSelectTool(BaseTool):
         dropped = [c for c in X.columns if c not in X_num.columns]
         if dropped:
             lines.append(f"Ignored non-numeric columns: {dropped}")
-
+        
+        selected = [name for name, _ in ranked]
+        df_reduced = df[[c for c in [target] + selected if c in df.columns]]
+        df_reduced.to_csv(path, index=False)
         out = "\n".join(lines)
         return out
 
@@ -276,7 +279,8 @@ class CorrelationFilterTool(BaseTool):
         abs_corr = corr[target].abs().sort_values(ascending=False)
         selected = abs_corr[abs_corr >= threshold].index.tolist()
         removed = [c for c in X_num.columns if c not in selected]
-
+        df_reduced = df[[c for c in [target] + selected if c in df.columns]]
+        df_reduced.to_csv(path, index=False)
         msg = (
             f"CorrelationFilter(threshold={threshold})\n"
             f"Selected: {selected}\n"

@@ -9,10 +9,8 @@ Exposed tools:
       grouped by another column.
 
 Usage notes:
-    • A pandas DataFrame must be attached prior to execution:
-        tool.dataset = df
+    
     • Both tools rely on structured Pydantic input schemas.
-    • Context logging is recorded via `CTX.add_decision(...)`.
 
 Dependencies:
     - pandas, numpy, pydantic, crewai
@@ -57,8 +55,7 @@ class DescribeFeatureTool(BaseTool):
     For object/categorical columns, also includes a 'Top 10 values (including NaN)'
     frequency table.
 
-    Important:
-        Ensure `self.dataset` is set to a pandas DataFrame before invoking.
+    
     """
     name: str = "describe_feature"
     description: str = "Describe a specific column using pandas describe()."
@@ -165,7 +162,7 @@ class ComputeStatisticTool(BaseTool):
             if stat == "kurtosis":
                 return float(pd.Series(s).kurtosis())
 
-            # Should never reach here due to SUPPORTED_STATS check.
+            
             return None
 
         # Grouped computation

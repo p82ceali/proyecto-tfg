@@ -25,6 +25,8 @@ from crewai import Agent, Task, LLM
 from tfg_ml.adapters.preprocessing_tools import (
     DiscretizeFeatureTool,
     OneHotEncodeFeatureTool,
+    NullCleanerColumnTool,
+    DropColumnTool,
 )
 
 # ---------------------------------------------------------------------
@@ -69,7 +71,7 @@ def build_preprocessing_agent() -> Agent:
             "You perform preprocessing steps like discretization and one-hot encoding. "
             "You never run tools unnecessarily. You ask a brief clarifying question if required parameters are missing."
         ),
-        tools=[DiscretizeFeatureTool(), OneHotEncodeFeatureTool()],
+        tools=[DiscretizeFeatureTool(), OneHotEncodeFeatureTool(), NullCleanerColumnTool(), DropColumnTool()],
         verbose=True,
         llm=llm,
         max_iter=3,
@@ -107,6 +109,7 @@ def build_task(agent: Agent) -> Task:
         expected_output=(
             "A concise report of the preprocessing step(s) performed, including the method(s) used, "
             "parameters applied, and a brief description of the affected/new columns."
+            "It doesn't invent anything. It uses the tool's output."
         ),
         agent=agent,
     )

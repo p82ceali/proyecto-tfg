@@ -24,16 +24,13 @@ from dotenv import load_dotenv
 from crewai import Agent, Task, LLM
 
 
-# EDA tools (must provide structured parameters)
 from tfg_ml.adapters.analysis_tools import (
     DescribeFeatureTool,
     ComputeStatisticTool,
 )
 
-# Load environment variables (e.g., GOOGLE_API_KEY)
 load_dotenv()
 
-# Base LLM used by this agent
 llm = LLM(
     model="gemini/gemini-2.0-flash-lite",
     api_key=os.getenv("GOOGLE_API_KEY"),

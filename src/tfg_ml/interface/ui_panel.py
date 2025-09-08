@@ -25,11 +25,10 @@ import pandas as pd
 import panel as pn
 from dotenv import load_dotenv
 
-# Project modules (must exist in your codebase)
+
 from tfg_ml.context import Context as SharedContext
 from tfg_ml.pipelines.workflows import run_pipeline
 
-# Panel setup
 pn.extension("tabulator", design="material", notifications=True)
 load_dotenv()
 
@@ -39,7 +38,7 @@ load_dotenv()
 FINAL_DATA_PATH = "data/dataset.csv"
 MAX_EXECUTION_TIME = 90  # seconds
 MAX_FILE_SIZE_MB = 50
-ACCEPTED_EXT = ".csv"  # extend to ".csv,.parquet" if needed
+ACCEPTED_EXT = ".csv"  
 
 shared_context = SharedContext()
 _lock = threading.Lock()
@@ -50,50 +49,50 @@ _detected_delimiter: Optional[str] = None
 # ---------------------------------------------------------------------
 # UI helpers (thread-safe)
 # ---------------------------------------------------------------------
-def _notify(kind: str, msg: str, duration: int = 3000) -> None:
-    """
-    Show a notification from any thread.
 
-    If Panel's notification area is unavailable, falls back to posting a chat
-    message or updating the status text.
+
+def refresh_dataset_preview(path: Optional[str] = None, force_resniff: bool = False) -> None:
     """
+    Read the dataset from disk and update the preview table and KPIs.
+   
+    
+    """
+    global _detected_delimiter
+
+
+    # Delimiter
+    delimiter = _detected_delimiter
+    if force_resniff or not delimiter:
+        try:
+            with open(FINAL_DATA_PATH, "rb") as fh:
+                raw = fh.read(4096)
+            delimiter = detect_delimiter_from_bytes(raw)
+            _detected_delimiter = delimiter
+        except Exception:
+            delimiter = ","
+
+
+    try:
+        df = read_csv_safely(FINAL_DATA_PATH, sep=delimiter)
+    except Exception as e:
+        safe_send_to_chat(f"❌ Error refreshing dataset preview: {e}", user="Assistant", respond=False)
+        return
+
     def _do():
-        notif = getattr(pn.state, "notifications", None)
-        if notif:
-            try:
-                if kind == "success":
-                    notif.success(msg, duration=duration)
-                elif kind == "error":
-                    notif.error(msg, duration=duration)
-                else:
-                    notif.info(msg, duration=duration)
-                return
-            except Exception:
-                pass  # fall back below
-
-        # Fallbacks
-        try:
-            if "chat" in globals() and chat is not None:
-                chat.send(f"**{kind.upper()}**: {msg}", user="System")
-                return
-        except Exception:
-            pass
-
-        try:
-            if "status_text" in globals() and status_text is not None:
-                prefix = "✅" if kind == "success" else "❌" if kind == "error" else "ℹ️"
-                status_text.object = f"{prefix} {msg}"
-        except Exception:
-            pass
+        tbl.value = df
+        k_rows.value = int(df.shape[0])
+        k_cols.value = int(df.shape[1])
+        k_delim_label.object = f"**Delimiter**: `{delimiter}`"
+        schema_md.object = (
+            f"**Columns ({df.shape[1]})**: " +
+            ", ".join(f"`{c}`" for c in df.columns[:12]) +
+            ("…" if df.shape[1] > 12 else "")
+        )
 
     if pn.state.curdoc:
         pn.state.curdoc.add_next_tick_callback(_do)
     else:
         _do()
-
-
-
-
 
 def safe_send_to_chat(message, user: str = "Assistant", respond: bool = False) -> None:
     """
@@ -275,7 +274,7 @@ def run_interaction(message: str) -> None:
         try:
             result = run_pipeline(message)
             safe_send_to_chat(result, user="Assistant", respond=False)
-
+            refresh_dataset_preview(path=FINAL_DATA_PATH)
             elapsed = time.time() - t0
             set_running(False, f"✅ Action completed in {elapsed:0.1f}s")
         except Exception as e:
@@ -370,7 +369,7 @@ template = pn.template.FastListTemplate(
     title="Assistant ML — Multi-agent",
     header=[pn.pane.Markdown("Filtering, EDA and training guided by conversation")],
     theme_toggle=True,
-    theme="dark",
+    theme="default",
     sidebar_width=360,
     main=[main],
     sidebar=[sidebar],

@@ -24,16 +24,13 @@ from crewai import Agent, Task, LLM
 
 from tfg_ml.adapters.model_training_tools import ModelTrainingTool
 
-# ---------------------------------------------------------------------
-# LLM configuration
-# ---------------------------------------------------------------------
+
 load_dotenv()
 llm = LLM(
     model="gemini/gemini-2.0-flash-lite",
     api_key=os.getenv("GOOGLE_API_KEY"),
     custom_llm_provider="gemini",
-    # If supported in your CrewAI version, consider a lower temperature for stability:
-    # temperature=0.2
+
 )
 
 

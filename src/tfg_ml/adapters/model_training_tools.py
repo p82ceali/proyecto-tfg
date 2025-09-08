@@ -8,12 +8,9 @@ Capabilities
 - Trains one of several supported models (scikit-learn or XGBoost when available).
 - Computes key metrics (classification or regression).
 - Persists artifacts (serialized model + metrics JSON) to disk.
-- Logs a compact decision in the shared context (CTX) for traceability.
 
 Usage
 -----
-Attach a pandas DataFrame to the tool before invoking:
-    tool.dataset = df
 
 Provide structured inputs via `ModelTrainingInput`. If `target` is omitted,
 the last DataFrame column is used as a heuristic.
@@ -121,6 +118,13 @@ class ModelTrainingInput(BaseModel):
     def _normalize_penalty(cls, v: Optional[str]) -> Optional[str]:
         """Normalize 'none' (string) to None for LogisticRegression compatibility."""
         return None if (v is None or str(v).lower() == "none") else v
+    
+    @field_validator("n_estimators", "max_depth", "learning_rate", "C", "penalty", "solver", mode="before")
+    @classmethod
+    def _none_string_to_none(cls, v):
+        if isinstance(v, str) and v.strip().lower() == "none":
+            return None
+        return v
 
 
 class ModelTrainingTool(BaseTool):

@@ -30,11 +30,9 @@ from tfg_ml.adapters.feature_selection_tools import (
     CorrelationFilterTool,
 )
 
-# Load environment variables (e.g., GOOGLE_API_KEY)
 load_dotenv()
 
-# Base LLM used by this agent
-# If supported by your CrewAI version, you may pass model kwargs such as temperature.
+
 llm = LLM(
     model="gemini/gemini-2.0-flash-lite",
     api_key=os.getenv("GOOGLE_API_KEY"),

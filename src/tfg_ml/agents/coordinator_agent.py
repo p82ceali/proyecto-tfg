@@ -16,12 +16,13 @@ Responsibilities
 
 Notes
 -----
-- The dataset (a pandas DataFrame) is attached to each delegate tool via the
-  `_attach_dataset_to_agent_tools` helper.
+
 """
 
 from __future__ import annotations
 
+import hashlib
+from threading import Lock
 from typing import Optional, List, Type
 import os
 
@@ -52,6 +53,26 @@ llm = LLM(
 
 dataset_path="data/dataset.csv"
 
+class _OncePerInputMixin:
+    """
+    Prevents re-running the same _run(...) with the same (user_request, chat_context)
+    within the lifetime of this tool instance.
+    """
+    _lock: Lock = Lock()
+    _last_fp: Optional[str] = None
+    _last_result: Optional[str] = None
+
+    def _fingerprint(self, user_request: str, chat_context: str) -> str:
+        raw = (user_request or "").strip() + "||" + (chat_context or "").strip()
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    def _is_duplicate(self, fp: str) -> bool:
+        with self._lock:
+            if self._last_fp == fp:
+                return True
+            self._last_fp = fp
+            return False
+
 # ---------------------------------------------------------------------
 # Structured input shared by delegates
 # ---------------------------------------------------------------------
@@ -72,7 +93,7 @@ class DelegateInput(BaseModel):
 # ---------------------------------------------------------------------
 # Delegates
 # ---------------------------------------------------------------------
-class DelegateToAnalysisTool(BaseTool):
+class DelegateToAnalysisTool(_OncePerInputMixin, BaseTool):
     """
     Delegate to the Analysis Agent (describe feature, mean/median/mode,
     grouped stats, etc.).
@@ -83,18 +104,23 @@ class DelegateToAnalysisTool(BaseTool):
         "Input must include {'user_request': <text>}."
     )
     args_schema: Type[BaseModel] = DelegateInput
-    #dataset: Optional[pd.DataFrame] = None
 
     def _run(self, user_request: str, chat_context: str = "", ) -> str:
        
+        fp = self._fingerprint(user_request, chat_context)
+        if self._is_duplicate(fp):
+            return self._last_result
         sub_agent = analysis.build_agent()
         sub_task = analysis.build_task(sub_agent)
         sub_crew = Crew(agents=[sub_agent], tasks=[sub_task], verbose=False)
         result = sub_crew.kickoff(inputs={"user_request": user_request, "chat_context": chat_context})
-        return str(result)
+        result_str = str(result)
+        self._last_result = result_str 
+
+        return result_str
 
 
-class DelegateToPreprocessingTool(BaseTool):
+class DelegateToPreprocessingTool(_OncePerInputMixin, BaseTool):
     """
     Delegate to the Preprocessing Agent (discretization/binning, one-hot encoding, etc.).
     Optionally autosaves the working dataset.
@@ -109,26 +135,21 @@ class DelegateToPreprocessingTool(BaseTool):
     
 
     def _run(self, user_request: str, chat_context: str = "") -> str:
-        dataset=pd.read_csv(dataset_path)
-        if not isinstance(dataset, pd.DataFrame):
-            return "No dataset found."
+        fp = self._fingerprint(user_request, chat_context)
+        if self._is_duplicate(fp):
+            return self._last_result
+
         sub_agent = preprocessing.build_preprocessing_agent()
         sub_task = preprocessing.build_task(sub_agent)
         sub_crew = Crew(agents=[sub_agent], tasks=[sub_task], verbose=False)
         result = sub_crew.kickoff(inputs={"user_request": user_request, "chat_context": chat_context})
+        result_str = str(result)
+        self._last_result = result_str 
 
-        if self.autosave_path:
-            try:
-                os.makedirs(os.path.dirname(self.autosave_path), exist_ok=True)
-                dataset.to_csv(self.autosave_path, index=False)
-                result = str(result)
-            except Exception as se:
-                result = f"\n\n⚠️ Failed to save dataset: {se}"
-
-        return str(result)
+        return result_str
 
 
-class DelegateToFeatureSelectionTool(BaseTool):
+class DelegateToFeatureSelectionTool(_OncePerInputMixin, BaseTool):
     """Delegate to the Feature Selection Agent (k-best, filters, importances)."""
     name: str = "delegate_to_feature_selection"
     description: str = (
@@ -136,28 +157,24 @@ class DelegateToFeatureSelectionTool(BaseTool):
         "Input must include {'user_request': <text>}."
     )
     args_schema: Type[BaseModel] = DelegateInput
-    autosave_path: Optional[str] = "pipeline_data/dataset.csv"
+    autosave_path: Optional[str] = "data/dataset.csv"
     def _run(self, user_request: str, chat_context: str = "") -> str:
-        dataset=pd.read_csv(dataset_path)
-        if not isinstance(dataset, pd.DataFrame):
-            return "No dataset found."
+        fp = self._fingerprint(user_request, chat_context)
+        if self._is_duplicate(fp):
+            return self._last_result
+        
         sub_agent = fsel.build_agent()
         sub_task = fsel.build_task(sub_agent)
         sub_crew = Crew(agents=[sub_agent], tasks=[sub_task], verbose=False)
         result = sub_crew.kickoff(inputs={"user_request": user_request, "chat_context": chat_context})
 
-        if self.autosave_path:
-            try:
-                os.makedirs(os.path.dirname(self.autosave_path), exist_ok=True)
-                dataset.to_csv(self.autosave_path, index=False)
-                result = str(result) 
-            except Exception as se:
-                result = f"\n\n⚠️ Failed to save dataset: {se}"
+        result_str = str(result)
+        self._last_result = result_str 
 
-        return str(result)
+        return result_str
 
 
-class DelegateToInstanceSelectionTool(BaseTool):
+class DelegateToInstanceSelectionTool(_OncePerInputMixin, BaseTool):
     """
     Delegate to the Instance Selection Agent (sampling and dataset splitting):
     stratified/random/class-balanced/clustered sampling, train/val/test split,
@@ -171,29 +188,25 @@ class DelegateToInstanceSelectionTool(BaseTool):
     args_schema: Type[BaseModel] = DelegateInput
     autosave_path: Optional[str] = "data/dataset.csv"
     def _run(self, user_request: str, chat_context: str = "") -> str:
-        dataset=pd.read_csv(dataset_path)
-
-        if not isinstance(dataset, pd.DataFrame):
-            return "No dataset found."
-
+        fp = self._fingerprint(user_request, chat_context)
+        if self._is_duplicate(fp):
+            return self._last_result
+        
         sub_agent = isel.build_agent()
         sub_task = isel.build_task(sub_agent)
         sub_crew = Crew(agents=[sub_agent], tasks=[sub_task], verbose=False)
         result = sub_crew.kickoff(inputs={"user_request": user_request, "chat_context": chat_context})
 
-        if self.autosave_path:
-            try:
-                os.makedirs(os.path.dirname(self.autosave_path), exist_ok=True)
-                dataset.to_csv(self.autosave_path, index=False)
-                result = str(result)
-            except Exception as se:
-                result = f"\n\n⚠️ Failed to save dataset: {se}" 
+        
 
-        return str(result)
+        result_str = str(result)
+        self._last_result = result_str 
+
+        return result_str
 
 
 # ------------------------- Model Training delegate -------------------------
-class DelegateToModelTrainingTool(BaseTool):
+class DelegateToModelTrainingTool(_OncePerInputMixin, BaseTool):
     """Delegate to the Model Training Agent (model selection, training, metrics, artifacts)."""
     name: str = "delegate_to_model_training"
     description: str = (
@@ -203,12 +216,17 @@ class DelegateToModelTrainingTool(BaseTool):
     args_schema: Type[BaseModel] = DelegateInput
     artifacts_dir: Optional[str] = "pipeline_data/artifacts"
     def _run(self, user_request: str, chat_context: str = "") -> str:
-
+        fp = self._fingerprint(user_request, chat_context)
+        if self._is_duplicate(fp):
+            return self._last_result
         sub_agent = mtrain.build_model_training_agent()
         sub_task = mtrain.build_task(sub_agent)
         sub_crew = Crew(agents=[sub_agent], tasks=[sub_task], verbose=False)
         result = sub_crew.kickoff(inputs={"user_request": user_request, "chat_context": chat_context})
-        return str(result)
+        result_str = str(result)
+        self._last_result = result_str 
+
+        return result_str
 
 
 # ---------------------------------------------------------------------
@@ -229,7 +247,7 @@ def build_coordinator_agent() -> Agent:
         DelegateToPreprocessingTool(),
         DelegateToFeatureSelectionTool(),
         DelegateToInstanceSelectionTool(),
-        DelegateToModelTrainingTool(),  # included
+        DelegateToModelTrainingTool(), 
     ]
 
     return Agent(
@@ -242,20 +260,22 @@ def build_coordinator_agent() -> Agent:
             "do NOT call any tool and do NOT delegate. "
             "Otherwise, decide whether it is an ANALYSIS, PREPROCESSING, FEATURE SELECTION, "
             "INSTANCE SELECTION/SPLITTING, or MODEL TRAINING request. "
-            "Call exactly ONE delegate tool with the original user_request and return its result verbatim. "
+            "Call at most ONE delegate tool exactly once with the original user_request. After receiving its result, STOP and return it verbatim. Do NOT retry or call any other tool."
             "If the request is ambiguous (and NOT small talk), ask ONE short clarifying question and stop."
         ),
         backstory=(
             "You are a precise orchestrator. First you detect small talk/off-topic and answer it yourself "
             "(no tools, no delegation, brief and friendly, same language). "
             "For ML-related intents, you never compute yourself; you delegate to the single most relevant specialist "
-            "and deliver their answer verbatim. You never call more than one tool."
+            "and deliver their answer verbatim. You never call more than one tool." \
+            "You never call more than one tool, never repeat the same tool, "
+            "and once you have a delegate’s answer, you return it as Final Answer and terminate."
         ),
         tools=delegates,
         verbose=True,
         llm=llm,
-        max_iter=3,
         max_execution_time=30,
+        allow_delegation=False,
     )
 
 
@@ -284,6 +304,8 @@ def build_coordinator_task(agent: Agent) -> Task:
             "- If INSTANCE SELECTION / SPLITTING (sampling/splits): call delegate_to_instance_selection.\n"
             "- If MODEL TRAINING (choose/train/evaluate/persist): call delegate_to_model_training.\n\n"
             "If the request is ambiguous (and NOT small talk), ask ONE short clarifying question and stop."
+            "**After calling a delegate and receiving its response, STOP immediately. "
+            "Do not call any delegate again. Do not retry.**"
         ),
         expected_output=(
             "Either a direct short reply (no tools, no delegation), the sub-agent's final answer, "

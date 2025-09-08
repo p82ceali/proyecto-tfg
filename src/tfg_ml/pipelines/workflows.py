@@ -23,29 +23,10 @@ from crewai import Crew
 from tfg_ml.agents.coordinator_agent import build_coordinator_agent, build_coordinator_task
 from tfg_ml.context import CTX
 
-# Default dataset location written by the UI
 DATASET_PATH = Path("data/dataset.csv")
 
 
-def _load_active_dataset(path: Path = DATASET_PATH) -> pd.DataFrame:
-    """
-    Load the active dataset expected by the Coordinator.
 
-    Args:
-        path: Path to the CSV file persisted by the UI.
-
-    Returns:
-        pandas.DataFrame: The in-memory dataset.
-
-    Raises:
-        FileNotFoundError: If the dataset file does not exist.
-        pd.errors.EmptyDataError / ParserError: If the CSV is unreadable.
-    """
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Dataset not found at '{path}'. Upload a CSV from the UI before running the pipeline."
-        )
-    return pd.read_csv(path)
 
 
 def run_pipeline(pregunta: str) -> str:
@@ -66,12 +47,11 @@ def run_pipeline(pregunta: str) -> str:
     """
     
 
-    # 2) Build Coordinator and its task (attach dataset to delegate tools)
+   
     chat_context = CTX.as_prompt()
     coordinator = build_coordinator_agent()
     task = build_coordinator_task(coordinator)
 
-    # 3) Run Crew with inputs
     crew = Crew(agents=[coordinator], tasks=[task], verbose=True)
     result = crew.kickoff(
         inputs={
@@ -80,9 +60,7 @@ def run_pipeline(pregunta: str) -> str:
         }
     )
 
-    # 4) Persist interaction in global context
     respuesta = str(result)
     CTX.add(pregunta, respuesta)
 
-    # 5) Return formatted answer
     return respuesta
