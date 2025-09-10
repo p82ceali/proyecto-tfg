@@ -61,8 +61,8 @@ This will open a web interface where you can upload your `.csv` dataset and inte
     -   `pipelines/`: Core logic for the machine learning workflows.
     -   `context.py`: Shared context between agents.
 -   `data/`: Directory for datasets.
-    `artifacts/`: Directory for artifacts.
-    `docs/`: Directory for documents
+-    `artifacts/`: Directory for artifacts.
+-    `docs/`: Directory for documents
 -   `.env.example`: Example environment file.
 -   `pyproject.toml`: Project metadata and dependencies.
 
